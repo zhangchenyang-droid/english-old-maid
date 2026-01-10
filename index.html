@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <title>抽王八（英语学习版）</title>
+    <link rel="manifest" href="./manifest.json" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <div class="topbar">
+        <div class="title">
+          <h1>OLD MAID · 抽王八（英语学习版）</h1>
+          <div class="sub">英文图片 ↔ 动物图片配对 · 逆时针轮流 · 抽上家牌 · 匹配规则：*_A ↔ *_B</div>
+        </div>
+        <div class="btnRow">
+          <button id="btnRestart" type="button" title="返回设置">返回设置</button>
+          <button id="btnEndTurn" class="primary" type="button" title="结束本回合">结束回合</button>
+          <button id="btnTune" type="button" title="布局调参">调布局</button>
+        </div>
+      </div>
+
+      <div id="setup" class="panel">
+        <div class="setupGrid">
+          <div class="field">
+            <label>固定 4 人局（你 + 3 个 AI）</label>
+            <div class="row">
+              <button id="btnStart" class="primary" type="button">开始游戏</button>
+            </div>
+          </div>
+
+          <div class="field">
+            <label>本局使用配对：<span id="pairCountLabel">22</span> 对（总牌数 <span id="totalCardLabel">45</span> 张）</label>
+            <div class="row">
+              <input id="pairCount" type="range" min="3" max="26" step="1" value="22" />
+              <input id="pairCountNum" type="number" min="3" max="26" step="1" value="22" aria-label="配对数量" />
+            </div>
+          </div>
+
+          <div class="field">
+            <label>AI 设置</label>
+            <div class="row">
+              <label style="display:flex;align-items:center;gap:8px;">
+                <input id="autoNextToggle" type="checkbox" checked />
+                AI 回合自动进行（推荐开启）
+              </label>
+            </div>
+          </div>
+
+          <div class="footerNote">
+            规则：轮到你时从上家背面抽 1 张加入手牌；你需要自己在手牌里找“同前缀”的两张牌配对（例如 2_1_A ↔ 2_1_B），选中两张后点“尝试配对并丢弃”。
+          </div>
+        </div>
+      </div>
+
+      <div id="game" class="panel gamePanel hidden">
+        <div class="tableBg" aria-label="牌桌">
+          <div class="zone zone-top">
+            <div class="zoneHead">
+              <div id="pTopName" class="zoneName"></div>
+              <div id="pTopCount" class="zoneCount"></div>
+            </div>
+            <div id="pTopHand" class="seatHand"></div>
+          </div>
+
+          <div class="zone zone-left">
+            <div class="zoneHead">
+              <div id="pLeftName" class="zoneName"></div>
+              <div id="pLeftCount" class="zoneCount"></div>
+            </div>
+            <div id="pLeftHand" class="seatHand"></div>
+          </div>
+
+          <div class="zone zone-right">
+            <div class="zoneHead">
+              <div id="pRightName" class="zoneName"></div>
+              <div id="pRightCount" class="zoneCount"></div>
+            </div>
+            <div id="pRightHand" class="seatHand"></div>
+          </div>
+
+          <div class="zone zone-bottom">
+            <div class="zoneHead">
+              <div id="pBottomName" class="zoneName"></div>
+              <div id="pBottomCount" class="zoneCount"></div>
+            </div>
+            <div id="pBottomHand" class="yourHand"></div>
+          </div>
+
+          <div class="zone zone-center">
+            <div id="discardPile" class="pileCards" aria-label="弃牌堆"></div>
+            <div id="discardCount" class="pileCount"></div>
+          </div>
+
+          <!-- Bottom-center action buttons (image based) -->
+          <div class="uiActionBar" aria-label="操作按钮">
+            <button id="btnHintImg" class="uiBtn" type="button" aria-label="提示">
+              <img src="./assets/ui_buttons/hint.png" alt="提示" draggable="false" />
+            </button>
+            <button id="btnMatchImg" class="uiBtn uiBtnMatch" type="button" aria-label="匹配出牌">
+              <img src="./assets/ui_buttons/match.png" alt="匹配出牌" draggable="false" />
+            </button>
+            <button id="btnEndTurnImg" class="uiBtn" type="button" aria-label="结束回合">
+              <img src="./assets/ui_buttons/endturn.png" alt="结束回合" draggable="false" />
+            </button>
+          </div>
+        </div>
+
+        <div id="message" class="msg" aria-live="polite"></div>
+        <div id="choiceRow" class="choiceRow hidden">
+          <button id="btnTryMatch" class="primary" type="button">尝试配对并丢弃</button>
+          <button id="btnClearSelect" type="button">取消选择</button>
+        </div>
+
+        <div id="drawOverlay" class="drawOverlay hidden" role="dialog" aria-modal="true">
+          <div class="drawOverlayInner">
+            <button id="btnDrawClose" class="drawClose" type="button" aria-label="关闭">关闭</button>
+            <div class="drawHint">从上家手牌中选一张抽走</div>
+            <div id="drawRow" class="drawRow" aria-label="上家展开手牌"></div>
+            <div id="drawScroll" class="drawScroll hidden" aria-hidden="true">
+              <div id="drawThumb" class="drawThumb"></div>
+            </div>
+          </div>
+        </div>
+
+        <div id="endOverlay" class="endOverlay hidden" role="dialog" aria-modal="true">
+          <div class="endCard">
+            <div id="endTitle" class="endTitle"></div>
+            <div id="endSubtitle" class="endSubtitle"></div>
+            <div class="endActions">
+              <button id="btnPlayAgain" class="primary" type="button">再来一局</button>
+              <button id="btnBackToSetup" type="button">返回设置</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="tunerPanel" class="tunerPanel hidden" role="dialog" aria-modal="true">
+          <div class="tunerHeader">
+            <div class="tunerTitle">布局调参</div>
+            <button id="btnTuneClose" type="button">关闭</button>
+          </div>
+          <div class="tunerBody">
+            <div class="tunerHint">拖动滑条实时调整 5 个区域的位置/尺寸（百分比），自动保存。</div>
+            <div id="tunerControls" class="tunerControls"></div>
+          </div>
+          <div class="tunerFooter">
+            <button id="btnTuneReset" type="button">恢复默认</button>
+            <button id="btnTuneImport" type="button">导入参数</button>
+            <button id="btnTuneCopy" class="primary" type="button">复制参数</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- deck -->
+    <script src="./deck/image_pairs.js"></script>
+    <!-- app (no modules so file:// works) -->
+    <script src="./src/game.js"></script>
+    <script src="./src/ui.js"></script>
+    <script>
+      if (!window.Game || !window.initUi) {
+        alert("程序加载失败：src/game.js 或 src/ui.js 未加载。");
+      } else {
+        const pairs = window.__IMAGE_PAIRS__ || [];
+        window.initUi(pairs);
+      }
+    </script>
+  </body>
+</html>
+

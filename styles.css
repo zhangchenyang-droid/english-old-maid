@@ -1,0 +1,1357 @@
+:root {
+  color-scheme: light dark;
+  --bg: #0b1020;
+  --panel: rgba(255, 255, 255, 0.06);
+  --panel2: rgba(255, 255, 255, 0.10);
+  --text: rgba(255, 255, 255, 0.92);
+  --muted: rgba(255, 255, 255, 0.70);
+  --good: #2bd576;
+  --warn: #ffd166;
+  --bad: #ff5c7a;
+  --accent: #7aa2ff;
+  --ring: rgba(122, 162, 255, 0.35);
+  --shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  --radius: 18px;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f6f8ff;
+    --panel: rgba(0, 0, 0, 0.05);
+    --panel2: rgba(0, 0, 0, 0.08);
+    --text: rgba(10, 20, 40, 0.92);
+    --muted: rgba(10, 20, 40, 0.72);
+    --shadow: 0 10px 30px rgba(0, 0, 0, 0.12);
+  }
+}
+
+* { box-sizing: border-box; }
+html, body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;
+}
+body {
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
+  background: radial-gradient(1200px 700px at 20% 10%, rgba(122, 162, 255, 0.25), transparent 60%),
+              radial-gradient(900px 500px at 90% 20%, rgba(43, 213, 118, 0.18), transparent 60%),
+              radial-gradient(900px 600px at 40% 90%, rgba(255, 92, 122, 0.12), transparent 60%),
+              var(--bg);
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+}
+
+.app {
+  width: 100%;
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 18px 14px 28px;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 14px;
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, var(--panel2), var(--panel));
+  box-shadow: var(--shadow);
+}
+
+.title {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.title h1 {
+  margin: 0;
+  font-size: 18px;
+  letter-spacing: 0.2px;
+}
+.title .sub {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.btnRow {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+button {
+  border: 1px solid transparent;
+  background: rgba(255, 255, 255, 0.10);
+  color: var(--text);
+  padding: 10px 12px;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: transform 120ms ease, background 120ms ease, border-color 120ms ease;
+}
+button:hover { transform: translateY(-1px); background: rgba(255, 255, 255, 0.14); }
+button:active { transform: translateY(0px); }
+button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+.primary {
+  background: rgba(122, 162, 255, 0.18);
+  border-color: rgba(122, 162, 255, 0.25);
+}
+.primary:hover { background: rgba(122, 162, 255, 0.24); }
+
+.panel {
+  margin-top: 14px;
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, var(--panel2), var(--panel));
+  box-shadow: var(--shadow);
+  padding: 14px;
+}
+.gamePanel {
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
+  margin-top: 14px;
+}
+
+.hidden { display: none; }
+
+.setupGrid {
+  display: grid;
+  gap: 14px;
+}
+
+.field {
+  display: grid;
+  gap: 8px;
+}
+.field label {
+  font-size: 13px;
+  color: var(--muted);
+}
+.field .row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+input[type="range"] { width: 220px; }
+input[type="number"] {
+  width: 78px;
+  border: 1px solid rgba(255,255,255,0.16);
+  background: rgba(0,0,0,0.18);
+  color: var(--text);
+  padding: 8px 10px;
+  border-radius: 12px;
+  font-variant-numeric: tabular-nums;
+}
+input.tunerNum,
+input.tunerNum:focus {
+  /* tuner numeric inputs are text for better decimal support on mobile */
+  width: 100%;
+}
+input[type="number"]:focus {
+  outline: none;
+  border-color: rgba(122,162,255,0.55);
+}
+
+.playersGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+@media (min-width: 820px) {
+  .playersGrid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+.playerCard {
+  border-radius: 16px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+}
+.playerCard.current {
+  border-color: var(--ring);
+  box-shadow: 0 0 0 4px rgba(122, 162, 255, 0.16);
+}
+.playerCard.out { opacity: 0.65; }
+
+.playerTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.playerName { font-weight: 650; }
+.pill {
+  display: inline-block;
+  margin-left: 8px;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--muted);
+  vertical-align: middle;
+}
+.badge {
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--muted);
+}
+.playerMeta {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.actionHeader {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.actionHeader .h {
+  font-size: 16px;
+  font-weight: 650;
+}
+.actionHeader .hint {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.handRow {
+  margin-top: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.cardBack {
+  width: 56px;
+  height: 76px;
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.08));
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: none;
+  display: grid;
+  place-items: center;
+  font-size: 22px;
+}
+
+.msg {
+  margin-top: 12px;
+  padding: 12px;
+  border-radius: 16px;
+  background: rgba(0, 0, 0, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+}
+.msg.revealOnly {
+  background: transparent;
+  border-color: transparent;
+  padding: 0;
+}
+.revealStage {
+  height: 164px;
+  display: grid;
+  place-items: center;
+}
+.revealTo {
+  margin-top: 8px;
+  text-align: center;
+  font-weight: 900;
+  letter-spacing: 0.3px;
+  color: rgba(255, 255, 255, 0.92);
+  text-shadow: 0 1px 12px rgba(0,0,0,0.35);
+}
+
+.jokerRevealOverlay {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: radial-gradient(1200px 600px at 50% 40%, rgba(0,0,0,0.18), rgba(0,0,0,0.02));
+  z-index: 10050;
+  pointer-events: none;
+}
+.jokerRevealInner {
+  transform: translateY(-12px);
+}
+.revealCard {
+  position: relative;
+  width: 116px;
+  height: 168px;
+  border-radius: 10px;
+  background:
+    radial-gradient(240px 140px at 20% 10%, rgba(0,0,0,0.06), transparent 60%),
+    linear-gradient(180deg, rgba(255,255,255,1), rgba(247,249,255,1));
+  border: 1px solid rgba(0,0,0,0.16);
+  box-shadow: none;
+  color: rgba(16, 24, 40, 0.92);
+  padding: 12px;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: 8px;
+}
+.revealCard.joker {
+  background:
+    radial-gradient(240px 140px at 20% 10%, rgba(0,0,0,0.06), transparent 60%),
+    linear-gradient(180deg, rgba(255,236,182,1), rgba(255,255,255,1));
+}
+.revealCard .primaryText {
+  font-weight: 900;
+  font-size: 15px;
+  line-height: 1.15;
+  word-break: break-word;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+.revealCard .secondaryText {
+  color: rgba(16, 24, 40, 0.62);
+  font-size: 12px;
+}
+
+/* Image card rendering */
+.imgWrap {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+}
+.cardImg {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+/* For image-based cards: let the image fill the whole card so content is larger and borders aren't doubled */
+.faceCard.imgCard {
+  padding: 0;
+  background: transparent;
+  border: 1px solid rgba(0, 0, 0, 0.22); /* subtle black edge */
+  border-radius: 10px; /* smaller to match provided PNG corners */
+  overflow: hidden; /* clip image to the same shape */
+}
+.faceCard.imgCard .imgWrap {
+  width: 100%;
+  height: 100%;
+}
+.faceCard.imgCard .cardImg {
+  /* keep the whole image (avoid cropping the word art) */
+  object-fit: contain;
+  border-radius: 0;
+}
+.faceCard.imgCard::before,
+.faceCard.imgCard::after {
+  content: none; /* hide corner pills for image cards */
+}
+
+/* Back cards (use the same shape + subtle black border) */
+.miniBack {
+  border: 1px solid rgba(0, 0, 0, 0.22);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.drawBack {
+  border: 1px solid rgba(0, 0, 0, 0.22);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+/* Discard cards in image mode (reuse the same frame style) */
+.discardCard.imgDiscard {
+  padding: 0;
+  background: transparent;
+  border: 1px solid rgba(0, 0, 0, 0.22);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.discardCard.imgDiscard::before,
+.discardCard.imgDiscard::after {
+  content: none;
+}
+/* Standard card face typography */
+.cornerText {
+  font-weight: 900;
+  font-size: 12px;
+  color: rgba(16, 24, 40, 0.92);
+}
+.cornerText.bottom { transform: rotate(180deg); justify-self: end; align-self: end; }
+.suit { font-weight: 900; }
+.centerText {
+  place-self: center;
+  text-align: center;
+  font-weight: 950;
+  font-size: 26px;
+  line-height: 1;
+  color: rgba(16, 24, 40, 0.92);
+}
+.centerSuit { font-size: 32px; margin-top: 6px; }
+.revealCard[data-suit="H"] .suit,
+.revealCard[data-suit="D"] .suit,
+.revealCard[data-suit="H"] .centerSuit,
+.revealCard[data-suit="D"] .centerSuit { color: #c62828; }
+.revealCard[data-suit="S"] .suit,
+.revealCard[data-suit="C"] .suit,
+.revealCard[data-suit="S"] .centerSuit,
+.revealCard[data-suit="C"] .centerSuit { color: #1b1f2a; }
+.revealCard::before,
+.revealCard::after {
+  content: attr(data-corner);
+  position: absolute;
+  font-weight: 950;
+  font-size: 11px;
+  letter-spacing: 0.2px;
+  color: rgba(16, 24, 40, 0.72);
+  background: rgba(255,255,255,0.80);
+  border: 1px solid rgba(0,0,0,0.10);
+  padding: 2px 6px;
+  border-radius: 999px;
+}
+.revealCard::before { top: 10px; left: 10px; }
+.revealCard::after { bottom: 10px; right: 10px; transform: rotate(180deg); }
+
+.msgRow {
+  display: grid;
+  grid-template-columns: 56px 1fr;
+  gap: 10px;
+  align-items: start;
+}
+.msgTitle { color: var(--muted); font-size: 13px; padding-top: 2px; }
+.msgBody { display: grid; gap: 6px; }
+.revealPrimary { font-size: 16px; font-weight: 700; }
+.revealSecondary { font-size: 13px; color: var(--muted); }
+.msgGood { margin-top: 10px; color: var(--good); font-weight: 650; }
+.msgNeutral { margin-top: 10px; color: var(--warn); font-weight: 650; }
+
+.footerNote {
+  margin-top: 14px;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+/* ===== 4-player table layout ===== */
+.table {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr minmax(260px, 360px) 1fr;
+  grid-template-rows: auto 1fr auto;
+  gap: 12px;
+  min-height: 560px;
+}
+@media (max-width: 720px) {
+  .table {
+    grid-template-columns: 1fr minmax(220px, 320px) 1fr;
+    min-height: 640px;
+  }
+}
+
+.seat {
+  border-radius: 16px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  display: grid;
+  gap: 10px;
+}
+.seatHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.seatName { font-weight: 700; font-size: 13px; }
+.seatCount { font-size: 12px; color: var(--muted); }
+
+.seat-top { grid-column: 1 / 4; grid-row: 1; }
+.seat-left { grid-column: 1; grid-row: 2; align-self: center; }
+.center { grid-column: 2; grid-row: 2; align-self: center; }
+.seat-right { grid-column: 3; grid-row: 2; align-self: center; }
+.seat-bottom { grid-column: 1 / 4; grid-row: 3; }
+
+.seatHand {
+  position: relative;
+  height: 96px;
+  display: block;
+}
+
+.centerTitle {
+  text-align: center;
+  font-weight: 800;
+  letter-spacing: 0.4px;
+  margin-bottom: 8px;
+}
+.centerPiles {
+  display: grid;
+  place-items: center;
+}
+.pile {
+  display: grid;
+  place-items: center;
+  gap: 8px;
+}
+.pileCards {
+  position: relative;
+  width: 96px;
+  height: 128px;
+  border-radius: 18px;
+  background: transparent;
+  border: none;
+  overflow: visible;
+}
+.pileCount {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.miniBack {
+  width: 56px;
+  height: 78px;
+  border-radius: 14px;
+  background-image: url("./assets/card-back.png");
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  border: 1px solid rgba(255,255,255,0.22);
+  box-shadow: none;
+  display: grid;
+  place-items: center;
+  font-size: 18px;
+  color: transparent;
+  position: absolute;
+  left: calc(50% + var(--sx, 0px));
+  top: calc(50% + var(--sy, 0px));
+  transform: translate(-50%, -50%) rotate(var(--srot, 0deg));
+  transition: left 280ms ease, top 280ms ease, transform 280ms ease, opacity 240ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: left, top, transform;
+}
+.miniBack.dealInit { opacity: 0; }
+.miniBack.dealIn { opacity: 1; }
+.miniBack[role="button"],
+.miniBack[type="button"] {
+  cursor: pointer;
+}
+
+.yourHand {
+  position: relative;
+  height: 164px;
+  display: block;
+  /* Hand itself doesn't pan; single-card drag is implemented on .faceCard */
+  touch-action: pan-y;
+  overflow: visible;
+}
+.faceCard {
+  width: 108px;
+  height: 152px;
+  border-radius: 16px;
+  padding: 10px 10px;
+  background:
+    radial-gradient(220px 120px at 20% 10%, rgba(0,0,0,0.06), transparent 60%),
+    linear-gradient(180deg, rgba(255,255,255,1), rgba(247,249,255,1));
+  border: 1px solid rgba(0,0,0,0.16);
+  box-shadow: none;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: 6px;
+  position: absolute;
+  left: 50%;
+  top: 18px;
+  --dx: 0px;
+  --dy: 0px;
+  --s: 1;
+  transform: translateX(-50%)
+    translateX(calc(var(--x, 0px) + var(--dx)))
+    translateY(calc(var(--y, 0px) + var(--dy)))
+    rotate(var(--rot, 0deg))
+    scale(var(--s, 1));
+  color: rgba(16, 24, 40, 0.92);
+}
+.faceCard .primaryText {
+  font-weight: 850;
+  font-size: 14px;
+  line-height: 1.15;
+  letter-spacing: 0.1px;
+  word-break: break-word;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.faceCard .secondaryText {
+  color: rgba(16, 24, 40, 0.62);
+  font-size: 12px;
+}
+.faceCard[data-suit="H"] .suit,
+.faceCard[data-suit="D"] .suit,
+.faceCard[data-suit="H"] .centerSuit,
+.faceCard[data-suit="D"] .centerSuit { color: #c62828; }
+.faceCard[data-suit="S"] .suit,
+.faceCard[data-suit="C"] .suit,
+.faceCard[data-suit="S"] .centerSuit,
+.faceCard[data-suit="C"] .centerSuit { color: #1b1f2a; }
+.faceCard.joker {
+  border-color: rgba(255, 209, 102, 0.30);
+  background:
+    radial-gradient(220px 120px at 20% 10%, rgba(0,0,0,0.06), transparent 60%),
+    linear-gradient(180deg, rgba(255,236,182,1), rgba(255,255,255,1));
+}
+.faceCard {
+  cursor: pointer;
+  user-select: none;
+  /* Keep outline present but transparent to avoid "black flash" on toggle */
+  outline: 2px solid rgba(122, 162, 255, 0);
+  outline-offset: 0px;
+  /* Use ease-out for selection/drag snapback (no rebound) */
+  transition: transform 260ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 120ms ease, border-color 120ms ease, outline-color 120ms ease;
+  pointer-events: auto;
+}
+.faceCard.dragging { transition: none; }
+.faceCard.dealAnim {
+  /* One composited transform animation: off-canvas -> overshoot -> settle */
+  animation-name: dealEnter;
+  animation-duration: 560ms;
+  animation-timing-function: linear; /* per-segment easings are set in keyframes */
+  animation-iteration-count: 1;
+  animation-fill-mode: both;
+  pointer-events: none;
+  will-change: transform;
+}
+@keyframes dealEnter {
+  0% {
+    transform: translateX(-50%)
+      translateX(calc(var(--x, 0px) + var(--dx)))
+      translateY(calc(var(--y, 0px) + var(--dy) + 420px))
+      rotate(var(--rot, 0deg))
+      scale(var(--s, 1));
+    animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  72% {
+    transform: translateX(-50%)
+      translateX(calc(var(--x, 0px) + var(--dx)))
+      translateY(calc(var(--y, 0px) + var(--dy) - 14px))
+      rotate(var(--rot, 0deg))
+      scale(var(--s, 1));
+    animation-timing-function: cubic-bezier(0.65, 0, 0.35, 1);
+  }
+  100% {
+    transform: translateX(-50%)
+      translateX(calc(var(--x, 0px) + var(--dx)))
+      translateY(calc(var(--y, 0px) + var(--dy)))
+      rotate(var(--rot, 0deg))
+      scale(var(--s, 1));
+  }
+}
+.faceCard.snapBack {
+  /* On release: explicit ease-in-out for a "smooth in/out" snapback feel */
+  transition: transform 320ms cubic-bezier(0.65, 0, 0.35, 1), box-shadow 120ms ease, border-color 120ms ease, outline-color 120ms ease;
+}
+.faceCard.springing {
+  transition: none !important;
+  pointer-events: none; /* avoid hover transform interference during spring */
+}
+.faceCard.springing:hover {
+  /* override hover lift while springing so physics drives the transform */
+  transform: translateX(-50%)
+    translateX(calc(var(--x, 0px) + var(--dx)))
+    translateY(calc(var(--y, 0px) + var(--dy)))
+    rotate(var(--rot, 0deg))
+    scale(var(--s, 1));
+}
+.faceCard .cardContent {
+  width: 100%;
+  height: 100%;
+  will-change: transform;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: 6px;
+  transform-origin: center bottom;
+}
+.faceCard.overshoot .cardContent {
+  animation: cardOvershoot 260ms cubic-bezier(0.2, 0.9, 0.2, 1) 1;
+}
+
+@keyframes cardOvershoot {
+  0%   { transform: translate(0px, 0px); }
+  60%  { transform: translate(var(--bounceX, 0px), var(--bounceY, 0px)); }
+  100% { transform: translate(0px, 0px); }
+}
+/* No hover reaction for human hand cards (only click/drag reacts). */
+.faceCard.selected {
+  border-color: var(--ring);
+  /* Fade in highlight by changing opacity only */
+  outline-color: rgba(122, 162, 255, 0.55);
+  box-shadow: none;
+  transform: translateX(-50%)
+    translateX(calc(var(--x, 0px) + var(--dx)))
+    translateY(calc(var(--y, 0px) + var(--dy) - 18px))
+    rotate(var(--rot, 0deg))
+    scale(var(--s, 1));
+}
+.faceCard.hintPulse {
+  /* Manual hint: only pulse highlight opacity (no scaling / no moving) */
+  animation: hintPulse 1.2s ease-in-out infinite;
+  border-color: rgba(255, 209, 102, 0.55);
+  outline: 2px solid rgba(255, 209, 102, 0.25);
+  outline-offset: 0px;
+  box-shadow: none;
+}
+
+@keyframes hintPulse {
+  0%   { outline-color: rgba(255, 209, 102, 0.18); border-color: rgba(255, 209, 102, 0.35); }
+  50%  { outline-color: rgba(255, 209, 102, 0.85); border-color: rgba(255, 209, 102, 0.80); }
+  100% { outline-color: rgba(255, 209, 102, 0.18); border-color: rgba(255, 209, 102, 0.35); }
+}
+
+.faceCard.hintPulseAuto {
+  /* Auto hint: pulse highlight + breathing scale on the whole card */
+  animation: hintPulseAutoBreath 1.8s ease-in-out infinite;
+  border-color: rgba(255, 209, 102, 0.55);
+  outline: 2px solid rgba(255, 209, 102, 0.25);
+  outline-offset: 0px;
+  box-shadow: none;
+}
+
+@keyframes hintPulseAutoBreath {
+  0% {
+    outline-color: rgba(255, 209, 102, 0.18);
+    border-color: rgba(255, 209, 102, 0.35);
+    transform: translateX(-50%)
+      translateX(calc(var(--x, 0px) + var(--dx)))
+      translateY(calc(var(--y, 0px) + var(--dy)))
+      rotate(var(--rot, 0deg))
+      scale(1);
+  }
+  50% {
+    outline-color: rgba(255, 209, 102, 0.88);
+    border-color: rgba(255, 209, 102, 0.85);
+    transform: translateX(-50%)
+      translateX(calc(var(--x, 0px) + var(--dx)))
+      translateY(calc(var(--y, 0px) + var(--dy)))
+      rotate(var(--rot, 0deg))
+      scale(1.06);
+  }
+  100% {
+    outline-color: rgba(255, 209, 102, 0.18);
+    border-color: rgba(255, 209, 102, 0.35);
+    transform: translateX(-50%)
+      translateX(calc(var(--x, 0px) + var(--dx)))
+      translateY(calc(var(--y, 0px) + var(--dy)))
+      rotate(var(--rot, 0deg))
+      scale(1);
+  }
+}
+
+/* Poker-like corners */
+.faceCard::before,
+.faceCard::after {
+  content: attr(data-corner);
+  position: absolute;
+  font-weight: 900;
+  font-size: 11px;
+  letter-spacing: 0.2px;
+  color: rgba(16, 24, 40, 0.72);
+  background: rgba(255,255,255,0.72);
+  border: 1px solid rgba(0,0,0,0.08);
+  padding: 2px 6px;
+  border-radius: 999px;
+}
+.faceCard::before { top: 8px; left: 8px; }
+.faceCard::after { bottom: 8px; right: 8px; transform: rotate(180deg); }
+
+.choiceRow {
+  margin-top: 10px;
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+}
+
+.flyingCard {
+  position: fixed;
+  z-index: 9999;
+  pointer-events: none;
+  transform-origin: center;
+}
+
+/* ===== End overlay (win/lose feedback) ===== */
+.endOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: grid;
+  place-items: center;
+  background: rgba(0,0,0,0.55);
+  backdrop-filter: blur(8px);
+}
+.endOverlay.hidden { display: none; }
+.endCard {
+  width: min(520px, calc(100vw - 40px));
+  border-radius: 20px;
+  padding: 18px 18px 16px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.14), rgba(255,255,255,0.08));
+  border: 1px solid rgba(255,255,255,0.18);
+  box-shadow: 0 26px 60px rgba(0,0,0,0.35);
+  color: rgba(255,255,255,0.92);
+}
+.endTitle {
+  font-size: 22px;
+  font-weight: 950;
+  letter-spacing: 0.3px;
+}
+.endSubtitle {
+  margin-top: 8px;
+  font-size: 13px;
+  color: rgba(255,255,255,0.78);
+  line-height: 1.5;
+}
+.endActions {
+  margin-top: 14px;
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+/* ===== Draw overlay (tap upstream hand to expand) ===== */
+.drawOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10002;
+  background: rgba(0,0,0,0.65);
+  backdrop-filter: blur(4px);
+  display: grid;
+  place-items: center;
+}
+.drawOverlay.hidden { display: none; }
+.drawOverlayInner {
+  width: min(1100px, calc(100vw - 24px));
+  padding: 14px 12px 12px;
+  border-radius: 18px;
+  position: relative;
+  overflow: hidden;
+}
+.drawClose {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  padding: 8px 10px;
+  border-radius: 12px;
+}
+.drawHint {
+  margin-top: 34px;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 800;
+  color: rgba(255,255,255,0.86);
+  text-shadow: 0 2px 10px rgba(0,0,0,0.55);
+}
+.drawRow {
+  margin-top: 12px;
+  display: flex;
+  gap: 12px;
+  justify-content: flex-start;
+  align-items: center;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 6px 6px 14px;
+  /* Smooth continuous scrolling (no per-card snap). */
+  scroll-snap-type: none;
+  -webkit-overflow-scrolling: touch;
+  /* hide native scrollbar; we render a custom one that animates */
+  scrollbar-width: none;
+}
+.drawRow::-webkit-scrollbar { display: none; }
+.drawRow.instant .drawBack {
+  /* If user starts scrolling/dragging, finish the "pile -> spread" instantly so scroll feedback is immediate. */
+  transition: none !important;
+  transform: translateY(0px) translateX(0px) !important;
+  opacity: 1 !important;
+}
+.drawBack {
+  width: 160px;
+  height: 224px;
+  border-radius: 22px;
+  background-image: url("./assets/card-back.png");
+  background-size: cover;
+  background-position: center;
+  border: 1px solid rgba(255,255,255,0.22);
+  cursor: pointer;
+  user-select: none;
+  flex: 0 0 auto;
+  scroll-snap-align: none;
+  transform: translateY(18px) translateX(var(--preX, 0px));
+  opacity: 0;
+  transition: transform 420ms cubic-bezier(0.22, 1, 0.36, 1), opacity 260ms ease;
+}
+.upstreamHandGhost {
+  position: fixed;
+  z-index: 10003;
+  pointer-events: none;
+  transform-origin: center;
+  will-change: transform;
+}
+.drawBack.in {
+  transform: translateY(0px) translateX(0px);
+  opacity: 1;
+}
+/* No hover response on draw cards */
+.drawBack:hover {
+  transform: translateY(0px);
+}
+/* Click (press) gives a slight sink */
+.drawBack:active {
+  transform: translateY(6px);
+}
+
+/* Transition ghost: pile -> spread */
+.drawTransitionGhost {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 92px;
+  height: 132px;
+  border-radius: 18px;
+  background-image: url("./assets/card-back.png");
+  background-size: cover;
+  background-position: center;
+  border: 1px solid rgba(255,255,255,0.22);
+  pointer-events: none;
+  z-index: 10003;
+  box-shadow: 0 18px 36px rgba(0,0,0,0.35);
+}
+
+/* Custom scrollbar that appears only on overflow */
+.drawScroll {
+  margin: 0 6px 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.18);
+  overflow: hidden;
+  opacity: 0.9;
+  transform-origin: left center;
+  touch-action: none;
+  cursor: pointer;
+}
+.drawScroll.hidden { display: none; }
+.drawThumb {
+  height: 100%;
+  width: var(--thumbW, 100%);
+  transform: translate3d(var(--thumbX, 0px), 0, 0);
+  background: rgba(255,255,255,0.65);
+  border-radius: 999px;
+  transition: width var(--thumbDur, 420ms) cubic-bezier(0.22, 1, 0.36, 1);
+  cursor: grab;
+  will-change: transform;
+}
+
+/* ===== Layout tuner panel ===== */
+.tunerPanel {
+  position: fixed;
+  right: 12px;
+  bottom: 12px;
+  z-index: 10001;
+  width: min(420px, calc(100vw - 24px));
+  max-height: min(78vh, 680px);
+  overflow: hidden;
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.14), rgba(255,255,255,0.08));
+  border: 1px solid rgba(255,255,255,0.18);
+  box-shadow: 0 26px 60px rgba(0,0,0,0.35);
+  color: rgba(255,255,255,0.92);
+}
+.tunerPanel.hidden { display: none; }
+.tunerHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 12px 10px;
+  border-bottom: 1px solid rgba(255,255,255,0.10);
+}
+.tunerTitle { font-weight: 950; letter-spacing: 0.2px; }
+.tunerBody { padding: 10px 12px; overflow: auto; max-height: min(60vh, 520px); }
+.tunerHint { font-size: 12px; color: rgba(255,255,255,0.76); line-height: 1.4; }
+.tunerControls { margin-top: 10px; display: grid; gap: 12px; }
+.tunerGroup {
+  padding: 10px;
+  border-radius: 14px;
+  background: rgba(0,0,0,0.16);
+  border: 1px solid rgba(255,255,255,0.10);
+}
+.tunerGroupTitle { font-weight: 900; font-size: 13px; margin-bottom: 8px; }
+.tunerRow { display: grid; grid-template-columns: 78px 1fr 74px; align-items: center; gap: 10px; margin-top: 8px; }
+.tunerRow label { font-size: 12px; color: rgba(255,255,255,0.78); }
+.tunerRow input[type="range"] { width: 100%; }
+.tunerVal { font-variant-numeric: tabular-nums; font-size: 12px; color: rgba(255,255,255,0.86); text-align: right; }
+.tunerNum {
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: 10px;
+}
+.tunerFooter { padding: 10px 12px 12px; display: flex; gap: 10px; justify-content: flex-end; border-top: 1px solid rgba(255,255,255,0.10); }
+
+/* ===== Background table image + absolute zones (overrides old .table layout) ===== */
+.tableBg {
+  position: relative;
+  width: 100%;
+  max-width: 980px;
+  margin: 0 auto;
+  aspect-ratio: 16 / 9;
+  border-radius: 18px;
+  overflow: visible;
+  box-shadow: var(--shadow);
+  background-color: transparent;
+}
+
+.tableBg::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 18px;
+  background-color: #2b4a2d;
+  background-image: url("./assets/table.png");
+  background-size: cover;
+  background-position: center;
+  z-index: -1;
+}
+
+/* ===== Image-based action buttons positioned like the reference ===== */
+.uiActionBar {
+  position: absolute;
+  left: 50%;
+  top: 62%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  gap: 18px;
+  align-items: flex-end;
+  justify-content: center;
+  pointer-events: auto;
+  z-index: 30; /* above discard pile */
+}
+.uiBtn {
+  border: none;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  -webkit-appearance: none;
+  appearance: none;
+  outline: none;
+  box-shadow: none;
+  transition: none;
+  /* Per-button offsets controlled by tuner sliders */
+  --btnX: 0px;
+  --btnY: 0px;
+  --pressY: 0px;
+  transform: translate(var(--btnX), calc(var(--btnY) + var(--pressY)));
+}
+.uiBtn:hover,
+.uiBtn:active {
+  /* Override global button:hover transform so hitbox == visual */
+  transform: translate(var(--btnX), calc(var(--btnY) + var(--pressY)));
+  background: transparent;
+  box-shadow: none;
+}
+.uiBtn:focus,
+.uiBtn:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+.uiBtn img {
+  display: block;
+  width: 138px;
+  height: auto;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-drag: none;
+  -webkit-touch-callout: none;
+}
+.uiBtn:active {
+  --pressY: 4px;
+}
+@media (max-width: 520px) {
+  .uiActionBar { gap: 12px; top: 64%; }
+  .uiBtn img { width: 112px; }
+}
+
+.zone {
+  position: absolute;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: 8px;
+  pointer-events: auto;
+  z-index: 1;
+}
+.zoneHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 8px;
+}
+.zoneName,
+.zoneCount {
+  pointer-events: none;
+  font-size: 12px;
+  font-weight: 850;
+  color: rgba(255,255,255,0.92);
+  text-shadow: 0 2px 10px rgba(0,0,0,0.55);
+}
+.zoneCount {
+  font-weight: 750;
+  color: rgba(255,255,255,0.86);
+}
+
+/* Tuned for /assets/table.png (5504x3072) to match the wood planks in the reference. */
+.zone-top    { left: 33%; top: 2.5%; width: 34%; height: 22%; }
+.zone-center { left: 30%; top: 34.5%; width: 40%; height: 24%; grid-template-rows: 1fr auto; place-items: center; z-index: 20; }
+.zone-left   { left: 0.5%; top: 29%; width: 27%; height: 42%; }
+.zone-right  { left: 72.5%; top: 29%; width: 27%; height: 42%; }
+.zone-bottom { left: 20%; top: 72.5%; width: 60%; height: 25%; z-index: 40; pointer-events: none; overflow: visible; }
+.zone-bottom .yourHand { z-index: 50; position: relative; } /* Ensure hand cards are above action buttons */
+.zone-bottom .faceCard { pointer-events: auto; }
+
+/* Keep header text non-interactive; hands remain interactive */
+.zoneHead { pointer-events: none; }
+
+/* Center discard pile sizing on the center plank */
+.zone-center .pileCards {
+  width: 260px;
+  height: 180px;
+  box-shadow: none;
+}
+.zone-center .pileCount {
+  text-shadow: 0 2px 10px rgba(0,0,0,0.55);
+  color: rgba(255,255,255,0.86);
+}
+
+/* Discard pile face-up cards */
+.discardCard {
+  position: absolute;
+  width: 92px;
+  height: 132px;
+  border-radius: 18px;
+  background:
+    radial-gradient(220px 120px at 20% 10%, rgba(0,0,0,0.06), transparent 60%),
+    linear-gradient(180deg, rgba(255,255,255,1), rgba(247,249,255,1));
+  border: 1px solid rgba(0,0,0,0.16);
+  box-shadow: none;
+  color: rgba(16, 24, 40, 0.92);
+  padding: 10px 10px;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+}
+.discardCard.joker {
+  background:
+    radial-gradient(220px 120px at 20% 10%, rgba(0,0,0,0.06), transparent 60%),
+    linear-gradient(180deg, rgba(255,236,182,1), rgba(255,255,255,1));
+}
+
+/* Let tuner control zone sizes (no hard-coded seatHand heights) */
+.zone .seatHand { height: 100%; }
+.zone-bottom .yourHand { height: 100%; }
+
+.miniBack {
+  width: 92px;
+  height: 132px;
+  border-radius: 18px;
+  border: 1px solid rgba(255,255,255,0.20);
+  box-shadow: none;
+}
+
+/* Bottom hand: tighter overlap & minimal rotation like the reference */
+.faceCard {
+  width: 86px;
+  height: 124px;
+  border-radius: 16px;
+}
+
+/* Mobile adaptations */
+@media (max-width: 768px) {
+  .app {
+    padding: 10px 8px 14px;
+  }
+
+  /* Scale down cards for mobile */
+  .faceCard {
+    width: 70px;
+    height: 101px;
+    border-radius: 13px;
+    padding: 7px 7px;
+  }
+
+  .faceCard .primaryText {
+    font-size: 11px;
+    -webkit-line-clamp: 2;
+  }
+
+  .faceCard .secondaryText {
+    font-size: 10px;
+  }
+
+  .faceCard .cardImg {
+    border-radius: 5px;
+  }
+
+  /* Scale down mini backs */
+  .miniBack {
+    width: 68px;
+    height: 98px;
+    border-radius: 13px;
+  }
+
+  /* Adjust hand height */
+  .yourHand {
+    height: 120px;
+  }
+
+  /* Scale down discard pile cards */
+  .discardCard {
+    width: 68px;
+    height: 98px;
+    border-radius: 13px;
+  }
+
+  /* Smaller topbar */
+  .title .main {
+    font-size: 15px;
+  }
+
+  .title .sub {
+    font-size: 10px;
+  }
+
+  /* Smaller action buttons */
+  .uiActionBar {
+    gap: 12px;
+  }
+
+  .uiBtn img {
+    width: 48px;
+    height: 48px;
+  }
+
+  /* Smaller zone labels */
+  .seatName {
+    font-size: 11px;
+  }
+
+  .seatCount {
+    font-size: 10px;
+  }
+
+  /* Adjust draw overlay for mobile */
+  .drawBack {
+    width: 130px;
+    height: 187px;
+    border-radius: 16px;
+  }
+
+  /* Smaller reveal cards */
+  .revealCard {
+    width: 90px;
+    height: 130px;
+  }
+
+  .jokerRevealOverlay .revealCard {
+    width: 110px;
+    height: 158px;
+  }
+}
+
+@media (max-width: 480px) {
+  /* Extra small screens - even smaller cards */
+  .faceCard {
+    width: 58px;
+    height: 84px;
+    border-radius: 11px;
+    padding: 5px 5px;
+  }
+
+  .faceCard .primaryText {
+    font-size: 9px;
+    -webkit-line-clamp: 1;
+  }
+
+  .faceCard .secondaryText {
+    font-size: 8px;
+  }
+
+  .miniBack {
+    width: 56px;
+    height: 80px;
+    border-radius: 11px;
+  }
+
+  .yourHand {
+    height: 100px;
+  }
+
+  .discardCard {
+    width: 56px;
+    height: 80px;
+    border-radius: 11px;
+  }
+
+  .uiBtn img {
+    width: 42px;
+    height: 42px;
+  }
+
+  .drawBack {
+    width: 110px;
+    height: 158px;
+    border-radius: 14px;
+  }
+}
+
+/* iPhone landscape fullscreen mode */
+@media (max-width: 1024px) and (orientation: landscape) {
+  .app {
+    max-width: 100vw;
+    padding: 0;
+  }
+
+  .topbar {
+    display: none;
+  }
+
+  .gamePanel {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    background: radial-gradient(1200px 700px at 20% 10%, rgba(122, 162, 255, 0.25), transparent 60%),
+                radial-gradient(900px 500px at 90% 20%, rgba(43, 213, 118, 0.18), transparent 60%),
+                radial-gradient(900px 600px at 40% 90%, rgba(255, 92, 122, 0.12), transparent 60%),
+                var(--bg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    margin: 0;
+  }
+
+  .tableBg {
+    width: 100vw;
+    height: 100vh;
+    max-width: none;
+    margin: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .tableBg::before {
+    border-radius: 0;
+  }
+}
+
