@@ -911,9 +911,9 @@ function animateDrawCardFlyFromPoint(startX, startY, toPlayerIdx, drawnCard, cur
     const toCenterY = centerY - midY;
 
     const dist = Math.sqrt(Math.pow(endX - startX, 2) + Math.pow(endY - startY, 2));
-    const arcHeight = Math.min(200, dist * 0.4); // 弧线高度
-    const controlX = midX + toCenterX * 0.3;
-    const controlY = midY + toCenterY * 0.3 - arcHeight;
+    const arcHeight = Math.min(80, dist * 0.15); // 弧线高度减小，避免往上飞
+    const controlX = midX + toCenterX * 0.2;
+    const controlY = midY + toCenterY * 0.2 - arcHeight;
 
     // 计算目标旋转角度（玩家手牌不旋转，保持0度）
     const targetRotZ = 0; // 玩家手牌始终是0度
