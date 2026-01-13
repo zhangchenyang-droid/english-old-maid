@@ -1,7 +1,7 @@
 {
-  "name": "抽王八（英语学习版）",
-  "short_name": "抽王八",
-  "description": "英文图片与动物图片配对的老麦游戏",
+  "name": "抽乌龟（儿童英语学习版）",
+  "short_name": "抽乌龟",
+  "description": "儿童英语学习游戏：英文图片与动物图片配对",
   "start_url": "./index.html",
   "display": "fullscreen",
   "orientation": "landscape",
