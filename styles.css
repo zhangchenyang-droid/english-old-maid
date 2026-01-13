@@ -1624,9 +1624,10 @@ input[type="number"]:focus {
 
   .tableBg {
     width: 100vw;
-    height: 100vh;
+    height: auto; /* 自动高度，保持纵横比 */
     max-width: none;
-    margin: 0;
+    max-height: 100vh; /* 限制最大高度 */
+    margin: 0 auto; /* 水平居中 */
     border-radius: 0;
     box-shadow: none;
   }
