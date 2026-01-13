@@ -952,9 +952,9 @@ function animateDrawCardFlyFromPoint(startX, startY, toPlayerIdx, drawnCard, cur
       });
     }
 
-    // 根据距离动态计算时长：基础600ms + 距离因子
-    // 短距离（200px）约650ms，长距离（600px）约850ms
-    const baseDuration = 600;
+    // 根据距离动态计算时长：基础450ms + 距离因子
+    // 短距离（200px）约500ms，长距离（600px）约700ms
+    const baseDuration = 450;
     const distanceFactor = Math.min(dist / 1000, 0.5); // 最多增加250ms
     const duration = baseDuration + distanceFactor * 500;
 
