@@ -184,10 +184,19 @@
           images.push(pair.A);
           images.push(pair.B);
         });
-        // 添加Joker卡
+
+        // 添加游戏核心图片
         images.push('./assets/joker.png');
-        // 添加卡背
         images.push('./assets/card-back.png');
+        images.push('./assets/table.png');
+
+        // 添加UI按钮图片
+        images.push('./assets/ui_buttons/hint.png');
+        images.push('./assets/ui_buttons/match.png');
+        images.push('./assets/ui_buttons/endturn.png');
+        images.push('./assets/ui_buttons/hand-count.png');
+        images.push('./assets/ui_buttons/hint-hand.png');
+        images.push('./assets/ui_buttons/round-start-panel.png');
 
         let loaded = 0;
         const total = images.length;
