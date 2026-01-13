@@ -824,6 +824,8 @@ function animateDrawCardFlyFromPoint(startX, startY, toPlayerIdx, drawnCard, onC
     }
 
     const toRect = toHandEl.getBoundingClientRect();
+    const player = game.players[toPlayerIdx];
+    const numCards = player ? player.hand.length + 1 : 1; // 加上即将抽的这张牌
 
     // 获取 .tableBg 中心点作为弧线参考
     const tableBg = document.querySelector('.tableBg');
@@ -831,9 +833,20 @@ function animateDrawCardFlyFromPoint(startX, startY, toPlayerIdx, drawnCard, onC
     const centerX = tableBgRect ? tableBgRect.left + tableBgRect.width / 2 : window.innerWidth / 2;
     const centerY = tableBgRect ? tableBgRect.top + tableBgRect.height / 2 : window.innerHeight / 2;
 
-    // 终点（中心坐标）
-    const endX = toRect.left + toRect.width / 2;
-    const endY = toRect.top + toRect.height / 2;
+    // 计算目标位置（最右边卡牌的位置，学习flyJokerToPlayerSimple）
+    let endX, endY;
+    if (toPlayerIdx === 0) {
+      // 玩家手牌：扇形展开，最右边位置
+      const center = (numCards - 1) / 2;
+      const spread = Math.min(62, 920 / Math.max(1, numCards - 1));
+      const d = numCards - 1 - center; // 最右边
+      endX = toRect.left + toRect.width / 2 + d * spread;
+      endY = toRect.top + 18 + targetCardHeight / 2 + Math.abs(d) * 0.8;
+    } else {
+      // 其他玩家（保持原逻辑）
+      endX = toRect.left + toRect.width / 2;
+      endY = toRect.top + toRect.height / 2;
+    }
 
     // 确定目标玩家手牌的实际卡牌尺寸（用于缩放）
     let targetCardWidth, targetCardHeight;
@@ -4479,6 +4492,40 @@ function initUi(imagePairs = []) {
             });
           } else {
             console.log("[翻转完成] 普通卡牌，启动飞行动画", { drawnCard, cardStartX, cardStartY });
+
+            // 🆕 立即调整玩家手牌位置，为新卡让出空位（学习AI出牌的自适应调整）
+            const bottomHandEl = document.getElementById("pBottomHand");
+            if (bottomHandEl && cur) {
+              const currentN = cur.hand.length; // 当前手牌数量
+              const newN = currentN + 1; // 加上即将抽的卡
+              const allCards = Array.from(bottomHandEl.querySelectorAll(".faceCard"));
+
+              // 标记手牌区域正在调整，防止renderSeats重新渲染
+              bottomHandEl.dataset.adjusting = "true";
+
+              // 计算新的布局（为最右边的新卡让出空位）
+              const newCenter = (newN - 1) / 2;
+              allCards.forEach((card, k) => {
+                const d = k - newCenter;
+                const spread = Math.min(62, 920 / Math.max(1, newN - 1));
+                const sx = d * spread;
+                const sy = Math.abs(d) * 0.8;
+
+                // 添加平滑过渡
+                card.style.transition = "left 420ms cubic-bezier(0.22, 1, 0.36, 1), top 420ms cubic-bezier(0.22, 1, 0.36, 1)";
+
+                requestAnimationFrame(() => {
+                  card.style.setProperty("--sx", `${sx}px`);
+                  card.style.setProperty("--sy", `${sy}px`);
+                });
+              });
+
+              // 动画完成后清除标记
+              setTimeout(() => {
+                bottomHandEl.dataset.adjusting = "";
+              }, 500);
+            }
+
             // Normal card: fly directly to hand (从翻转后的实际位置开始)
             // 玩家抽牌，目标是索引0（人类玩家）
             animateDrawCardFlyFromPoint(cardStartX, cardStartY, 0, drawnCard, () => {
