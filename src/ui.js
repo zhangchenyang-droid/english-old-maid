@@ -940,13 +940,16 @@ function animateDrawCardFlyFromPoint(startX, startY, toPlayerIdx, drawnCard, cur
       // 平滑缩放
       const currentScale = 1 + (targetScale - 1) * easeT;
 
+      // 飞行中的旋转角度：从0度到10度再回到0度（中间倾斜）
+      const rotationAngle = Math.sin(easeT * Math.PI) * 10; // 峰值10度
+
       // 淡出效果
       const opacity = 1 - 0.05 * easeT;
 
       keyframes.push({
         left: `${x - 70}px`,
         top: `${y - 98}px`,
-        transform: `scale(${currentScale})`,
+        transform: `scale(${currentScale}) rotate(${rotationAngle}deg)`,
         opacity: opacity,
         offset: t
       });
@@ -4513,12 +4516,8 @@ function initUi(imagePairs = []) {
               }
 
               clearSelection();
-
-              // 延迟renderAll，等待手牌自适应调整动画完全完成（550ms，比adjusting标记清除稍晚）
-              setTimeout(() => {
-                renderAll(game, settings);
-                console.log("[飞行完成] renderAll完成");
-              }, 550);
+              renderAll(game, settings);
+              console.log("[飞行完成] renderAll完成");
             });
           }
         };
