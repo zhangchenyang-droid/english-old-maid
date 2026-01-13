@@ -4412,11 +4412,9 @@ function initUi(imagePairs = []) {
           const cardStartY = cardRect.top + cardRect.height / 2;
           console.log("[翻转完成] 卡牌位置:", { x: cardStartX, y: cardStartY });
 
-          // 延迟关闭抽牌界面，让飞行卡牌先创建（50ms后）
-          console.log("[翻转完成] 延迟关闭抽牌界面...");
-          setTimeout(() => {
-            closeDrawOverlay();
-          }, 50);
+          // 立即关闭抽牌界面（飞行卡牌在外部独立创建）
+          console.log("[翻转完成] 关闭抽牌界面...");
+          closeDrawOverlay();
 
           if (isJoker) {
             console.log("[翻转完成] 检测到Joker，启动新的Joker动画");
