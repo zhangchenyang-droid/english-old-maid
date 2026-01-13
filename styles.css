@@ -1623,13 +1623,14 @@ input[type="number"]:focus {
   }
 
   .tableBg {
-    width: 100vw;
-    height: auto; /* 自动高度，保持纵横比 */
+    width: 100%;
+    height: 100%;
     max-width: none;
-    max-height: 100vh; /* 限制最大高度 */
-    margin: 0 auto; /* 水平居中 */
+    max-height: none;
+    margin: 0;
     border-radius: 0;
     box-shadow: none;
+    object-fit: contain; /* 保持纵横比居中显示 */
   }
 
   .tableBg::before {
