@@ -1119,8 +1119,10 @@ function animateAiDiscardPair(playerIdx, card1, card2, fromRectOverride, onCompl
       backFace.style.backfaceVisibility = "hidden";
       backFace.style.transform = "rotateY(0deg)";
 
-      // 创建正面元素（初始为空背景，90° 时填充）
+      // 创建正面元素（直接填充内容，避免90度时隐身）
       const frontFace = document.createElement("div");
+      frontFace.className = `faceCard ${card.type === "img" ? "imgCard" : ""}`;
+      frontFace.dataset.corner = "";
       frontFace.style.width = flyingCardWidth + "px";
       frontFace.style.height = flyingCardHeight + "px";
       frontFace.style.position = "absolute";
@@ -1128,10 +1130,12 @@ function animateAiDiscardPair(playerIdx, card1, card2, fromRectOverride, onCompl
       frontFace.style.top = "0";
       frontFace.style.backfaceVisibility = "hidden";
       frontFace.style.transform = "rotateY(180deg)";
-      // 初始显示一个更明显的卡牌背景，避免90度时隐身
-      frontFace.style.background = "rgba(255,255,255,0.95)";
-      frontFace.style.border = "1px solid rgba(0,0,0,0.16)";
-      frontFace.style.borderRadius = "10px";
+      // 直接填充正面内容
+      frontFace.innerHTML = `
+        <div class="cardContent">
+          <div class="imgWrap"><img class="cardImg" src="${escapeHtml(card.imgSrc)}" alt="card" draggable="false" /></div>
+        </div>
+      `;
 
       flipContainer.appendChild(backFace);
       flipContainer.appendChild(frontFace);
@@ -1244,56 +1248,12 @@ function animateAiDiscardPair(playerIdx, card1, card2, fromRectOverride, onCompl
       });
 
       // 内层容器动画：翻转
-      const flipAnim = flipContainer.animate(flipKeyframes, {
+      flipContainer.animate(flipKeyframes, {
         duration: 520,
         easing: "linear"
       });
 
-      // 在 90° 时填充正面内容
-      let flipped = false;
-      const checkFlip = () => {
-        if (flipped || flipAnim.playState === 'finished') return;
-        const currentTime = flipAnim.currentTime || 0;
-        const progress = currentTime / 520; // 0.0 - 1.0
-
-        // 计算当前的翻转角度
-        let easeT;
-        if (progress <= 0.68) {
-          const t1 = progress / 0.68;
-          easeT = 1 - Math.pow(1 - t1, 2.5);
-        } else {
-          easeT = 1.0;
-        }
-        const currentFlipRotation = Math.min(easeT, 1.0) * 180;
-
-        // 当旋转到 90° 时，填充正面内容
-        if (currentFlipRotation >= 90 && !flipped) {
-          flipped = true;
-          console.log(`[AI出牌翻转] Card${index} 到达90°，填充正面内容`);
-
-          // 填充正面卡牌的样式和内容
-          frontFace.className = `faceCard ${card.type === "img" ? "imgCard" : ""}`;
-          frontFace.dataset.corner = "";
-
-          // 重新设置关键的 inline style（确保不被 CSS 覆盖）
-          frontFace.style.width = flyingCardWidth + "px";
-          frontFace.style.height = flyingCardHeight + "px";
-          frontFace.style.position = "absolute";
-          frontFace.style.left = "0";
-          frontFace.style.top = "0";
-          frontFace.style.backfaceVisibility = "hidden";
-          frontFace.style.transform = "rotateY(180deg)";
-
-          frontFace.innerHTML = `
-            <div class="cardContent">
-              <div class="imgWrap"><img class="cardImg" src="${escapeHtml(card.imgSrc)}" alt="card" draggable="false" /></div>
-            </div>
-          `;
-        } else {
-          requestAnimationFrame(checkFlip);
-        }
-      };
-      requestAnimationFrame(checkFlip);
+      // 正面内容已在初始化时填充，不需要90度检测了
 
       outerAnim.onfinish = () => {
         // 立即移除飞行元素（renderDiscardPile 会无缝接管显示）
