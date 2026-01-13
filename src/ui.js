@@ -4514,11 +4514,11 @@ function initUi(imagePairs = []) {
 
               clearSelection();
 
-              // 延迟renderAll，等待手牌自适应调整动画完成（500ms）
+              // 延迟renderAll，等待手牌自适应调整动画完全完成（550ms，比adjusting标记清除稍晚）
               setTimeout(() => {
                 renderAll(game, settings);
                 console.log("[飞行完成] renderAll完成");
-              }, 500);
+              }, 550);
             });
           }
         };
