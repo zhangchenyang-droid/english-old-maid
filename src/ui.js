@@ -3897,6 +3897,18 @@ function initUi(imagePairs = []) {
 
   btnStart.addEventListener("click", startNewGame);
   btnRestart.addEventListener("click", () => {
+    // 返回设置时重置关卡
+    window.__GAME_ROUND_TRACKER__.currentLevel = 1;
+    window.__GAME_ROUND_TRACKER__.roundNumber = 0;
+
+    // 清除 localStorage
+    try {
+      localStorage.removeItem("gameRoundTracker");
+      console.log(`[关卡切换] 点击返回设置，已重置为第1关`);
+    } catch (e) {
+      console.error(`[关卡切换] 清除失败:`, e);
+    }
+
     $("#game").classList.add("hidden");
     $("#setup").classList.remove("hidden");
     $("#message").innerHTML = "";

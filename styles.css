@@ -29,12 +29,29 @@
 }
 
 * { box-sizing: border-box; }
+
+/* 移动端优化：禁用浏览器默认触摸行为 */
+html {
+  /* 禁用双击缩放 */
+  touch-action: manipulation;
+  /* 禁用文本选择 */
+  -webkit-user-select: none;
+  user-select: none;
+  /* 禁用长按菜单 */
+  -webkit-touch-callout: none;
+  /* 禁用点击高亮 */
+  -webkit-tap-highlight-color: transparent;
+}
+
 html, body {
   height: 100%;
   margin: 0;
   padding: 0;
   overflow-x: hidden;
+  /* 阻止下拉刷新 */
+  overscroll-behavior: none;
 }
+
 body {
   font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
   background: radial-gradient(1200px 700px at 20% 10%, rgba(122, 162, 255, 0.25), transparent 60%),
@@ -46,6 +63,9 @@ body {
   align-items: center;
   justify-content: center;
   min-height: 100vh;
+  /* 防止iOS Safari弹性滚动 */
+  position: fixed;
+  width: 100%;
 }
 
 .app {
