@@ -827,6 +827,25 @@ function animateDrawCardFlyFromPoint(startX, startY, toPlayerIdx, drawnCard, onC
     const player = game.players[toPlayerIdx];
     const numCards = player ? player.hand.length + 1 : 1; // 加上即将抽的这张牌
 
+    // 先确定目标玩家手牌的实际卡牌尺寸（用于后续位置计算）
+    let targetCardWidth, targetCardHeight;
+    if (toPlayerIdx === 0) {
+      // 玩家手牌（底部）
+      const scalePlayer = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--scale-player-card')) || 0.85;
+      targetCardWidth = 86 * scalePlayer;
+      targetCardHeight = 124 * scalePlayer;
+    } else if (toPlayerIdx === 2) {
+      // AI上家
+      const scaleTop = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--scale-ai-top-card')) || 1.29;
+      targetCardWidth = 52 * scaleTop;
+      targetCardHeight = 72 * scaleTop;
+    } else {
+      // AI左右家
+      const scaleSide = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--scale-ai-side-card')) || 1.25;
+      targetCardWidth = 64 * scaleSide;
+      targetCardHeight = 89 * scaleSide;
+    }
+
     // 获取 .tableBg 中心点作为弧线参考
     const tableBg = document.querySelector('.tableBg');
     const tableBgRect = tableBg ? tableBg.getBoundingClientRect() : null;
@@ -846,25 +865,6 @@ function animateDrawCardFlyFromPoint(startX, startY, toPlayerIdx, drawnCard, onC
       // 其他玩家（保持原逻辑）
       endX = toRect.left + toRect.width / 2;
       endY = toRect.top + toRect.height / 2;
-    }
-
-    // 确定目标玩家手牌的实际卡牌尺寸（用于缩放）
-    let targetCardWidth, targetCardHeight;
-    if (toPlayerIdx === 0) {
-      // 玩家手牌（底部）
-      const scalePlayer = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--scale-player-card')) || 0.85;
-      targetCardWidth = 86 * scalePlayer;
-      targetCardHeight = 124 * scalePlayer;
-    } else if (toPlayerIdx === 2) {
-      // AI上家
-      const scaleTop = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--scale-ai-top-card')) || 1.29;
-      targetCardWidth = 52 * scaleTop;
-      targetCardHeight = 72 * scaleTop;
-    } else {
-      // AI左右家
-      const scaleSide = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--scale-ai-side-card')) || 1.25;
-      targetCardWidth = 64 * scaleSide;
-      targetCardHeight = 89 * scaleSide;
     }
 
     // 创建飞行卡牌（已经是正面了，因为在抽牌界面已经翻转过了）
