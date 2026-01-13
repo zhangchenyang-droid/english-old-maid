@@ -175,11 +175,106 @@
     <script src="./src/game.js"></script>
     <script src="./src/ui.js"></script>
     <script>
+      // 图片预加载功能
+      function preloadImages(imagePairs, onProgress, onComplete) {
+        const images = [];
+
+        // 收集所有需要加载的图片URL
+        imagePairs.forEach(pair => {
+          images.push(pair.A);
+          images.push(pair.B);
+        });
+        // 添加Joker卡
+        images.push('./assets/joker.png');
+        // 添加卡背
+        images.push('./assets/card-back.png');
+
+        let loaded = 0;
+        const total = images.length;
+        const imageElements = [];
+
+        images.forEach((src, index) => {
+          const img = new Image();
+          img.onload = img.onerror = () => {
+            loaded++;
+            if (onProgress) {
+              onProgress(loaded, total, Math.round((loaded / total) * 100));
+            }
+            if (loaded === total && onComplete) {
+              onComplete();
+            }
+          };
+          img.src = src;
+          imageElements.push(img);
+        });
+      }
+
+      // 显示加载界面
+      function showLoadingScreen() {
+        const loadingDiv = document.createElement('div');
+        loadingDiv.id = 'imageLoader';
+        loadingDiv.style.cssText = `
+          position: fixed;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          background: radial-gradient(ellipse at center, rgba(0,10,25,0.95) 0%, rgba(0,0,0,0.98) 100%);
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          z-index: 99999;
+          font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+        `;
+
+        loadingDiv.innerHTML = `
+          <div style="text-align: center;">
+            <h2 style="color: rgba(255,255,255,0.9); font-size: 24px; margin-bottom: 30px;">
+              🐢 正在加载卡牌...
+            </h2>
+            <div style="width: 300px; height: 8px; background: rgba(255,255,255,0.1); border-radius: 10px; overflow: hidden; margin-bottom: 15px;">
+              <div id="progressBar" style="width: 0%; height: 100%; background: linear-gradient(90deg, #7aa2ff, #2bd576); transition: width 0.3s;"></div>
+            </div>
+            <div id="progressText" style="color: rgba(255,255,255,0.7); font-size: 14px;">
+              0 / 0 (0%)
+            </div>
+          </div>
+        `;
+
+        document.body.appendChild(loadingDiv);
+        return loadingDiv;
+      }
+
       if (!window.Game || !window.initUi) {
         alert("程序加载失败：src/game.js 或 src/ui.js 未加载。");
       } else {
         const pairs = window.__IMAGE_PAIRS__ || [];
-        window.initUi(pairs);
+
+        // 显示加载界面
+        const loader = showLoadingScreen();
+        const progressBar = document.getElementById('progressBar');
+        const progressText = document.getElementById('progressText');
+
+        // 预加载所有图片
+        preloadImages(
+          pairs,
+          (loaded, total, percent) => {
+            // 更新进度
+            progressBar.style.width = percent + '%';
+            progressText.textContent = `${loaded} / ${total} (${percent}%)`;
+          },
+          () => {
+            // 加载完成，淡出加载界面
+            loader.style.transition = 'opacity 0.5s';
+            loader.style.opacity = '0';
+            setTimeout(() => {
+              loader.remove();
+              // 初始化游戏
+              window.initUi(pairs);
+            }, 500);
+          }
+        );
       }
 
       // 全屏功能
