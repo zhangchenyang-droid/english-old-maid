@@ -63,9 +63,6 @@ body {
   align-items: center;
   justify-content: center;
   min-height: 100vh;
-  /* 防止iOS Safari弹性滚动 */
-  position: fixed;
-  width: 100%;
 }
 
 .app {
