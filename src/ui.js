@@ -2626,7 +2626,7 @@ function initUi(imagePairs = []) {
   const LAYOUT_KEY = "oldmaid_layout_v1";
 
   const DEFAULT_LAYOUT = {
-    top: { left: 32.8, top: -2.8, width: 34.5, height: 8 },
+    top: { left: 32.6, top: -2.8, width: 34.5, height: 8 },
     left: { left: -2.2, top: 37.2, width: 15, height: 8 },
     right: { left: 74.1, top: 37.2, width: 41, height: 8 },
     bottom: { left: 19.7, top: 61.6, width: 62, height: 25 },
@@ -2644,18 +2644,20 @@ function initUi(imagePairs = []) {
       discardPile: 0.82,
     },
     handCount: {
-      top: { x: 0, y: 0, textX: 62, textY: 0 },
-      left: { x: 0, y: 0, textX: 62, textY: 0 },
-      right: { x: 0, y: 0, textX: 62, textY: 0 },
-      bottom: { x: 0, y: 0, textX: 62, textY: 0 },
-      scaleX: 1.0,
-      scaleY: 1.0,
+      top: { x: 86, y: 60, textX: 62, textY: 0 },
+      left: { x: 40, y: -104, textX: 62, textY: 0 },
+      right: { x: -170, y: -104, textX: 62, textY: 0 },
+      bottom: { x: 18, y: -15, textX: 62, textY: 0 },
+      scaleX: 0.73,
+      scaleY: 1.29,
+      x: 27,
+      y: 27,
     },
     zoneName: {
-      top: { x: 0, y: 0 },
-      left: { x: 0, y: 0 },
-      right: { x: 0, y: 0 },
-      bottom: { x: 0, y: 0 },
+      top: { x: -64, y: 59 },
+      left: { x: 17, y: -100 },
+      right: { x: 67, y: -88 },
+      bottom: { x: -12, y: 19 },
     },
   };
 
