@@ -1128,8 +1128,8 @@ function animateAiDiscardPair(playerIdx, card1, card2, fromRectOverride, onCompl
       frontFace.style.top = "0";
       frontFace.style.backfaceVisibility = "hidden";
       frontFace.style.transform = "rotateY(180deg)";
-      // 初始显示一个空的卡牌背景，避免完全透明
-      frontFace.style.background = "rgba(255,255,255,0.1)";
+      // 初始显示一个更明显的卡牌背景，避免90度时隐身
+      frontFace.style.background = "rgba(255,255,255,0.95)";
       frontFace.style.border = "1px solid rgba(0,0,0,0.16)";
       frontFace.style.borderRadius = "10px";
 
