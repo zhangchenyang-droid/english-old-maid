@@ -4513,8 +4513,12 @@ function initUi(imagePairs = []) {
               }
 
               clearSelection();
-              renderAll(game, settings);
-              console.log("[飞行完成] renderAll完成");
+
+              // 延迟renderAll，等待手牌自适应调整动画完成（500ms）
+              setTimeout(() => {
+                renderAll(game, settings);
+                console.log("[飞行完成] renderAll完成");
+              }, 500);
             });
           }
         };
