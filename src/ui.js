@@ -973,10 +973,16 @@ function animateDrawCardFlyFromPoint(startX, startY, toPlayerIdx, drawnCard, cur
       });
     }
 
+    // 根据距离动态计算时长：基础400ms + 距离因子
+    // 短距离（200px）约450ms，长距离（600px）约650ms
+    const baseDuration = 400;
+    const distanceFactor = Math.min(dist / 1000, 0.5); // 最多增加250ms
+    const duration = baseDuration + distanceFactor * 500;
+
     // 执行动画
-    console.log("[animateDrawCardFlyFromPoint] 开始动画, keyframes数量:", keyframes.length);
+    console.log(`[animateDrawCardFlyFromPoint] 开始动画, 距离=${Math.round(dist)}px, 时长=${Math.round(duration)}ms`);
     const anim = flyingCard.animate(keyframes, {
-      duration: 560,
+      duration: duration,
       easing: "linear" // 缓动已在关键帧中手动实现
     });
 
