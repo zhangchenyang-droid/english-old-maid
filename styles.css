@@ -12,6 +12,9 @@
   --ring: rgba(122, 162, 255, 0.35);
   --shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
   --radius: 18px;
+
+  /* 卡牌缩放 */
+  --scale-player-card: 1.1;
 }
 
 @media (prefers-color-scheme: light) {
@@ -297,10 +300,16 @@ input[type="number"]:focus {
   grid-template-rows: auto 1fr auto;
   gap: 8px;
 }
-.revealCard.joker {
-  background:
-    radial-gradient(240px 140px at 20% 10%, rgba(0,0,0,0.06), transparent 60%),
-    linear-gradient(180deg, rgba(255,236,182,1), rgba(255,255,255,1));
+.revealCard.joker.imgCard {
+  /* JOKER金卡：纯图片，保留黑边 */
+  padding: 0;
+  background: transparent;
+  border: 1px solid rgba(0,0,0,0.16);
+}
+.revealCard.joker.imgCard .cardImg {
+  object-fit: contain;
+  width: 100%;
+  height: 100%;
 }
 .revealCard .primaryText {
   font-weight: 900;
@@ -331,6 +340,16 @@ input[type="number"]:focus {
   object-fit: contain;
 }
 
+/* 抽卡界面翻转后的正面卡片：稍微放大图片铺满边缘 */
+.drawBack .imgCard .cardImg {
+  width: 105%;
+  height: 105%;
+  object-fit: cover;
+  position: relative;
+  left: -2.5%;
+  top: -2.5%;
+}
+
 /* For image-based cards: let the image fill the whole card so content is larger and borders aren't doubled */
 .faceCard.imgCard {
   padding: 0;
@@ -355,8 +374,9 @@ input[type="number"]:focus {
 
 /* Back cards (use the same shape + subtle black border) */
 .miniBack {
-  border: 1px solid rgba(0, 0, 0, 0.22);
-  border-radius: 10px;
+  border: 1px solid rgba(0, 0, 0, 0.16);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
   overflow: hidden;
 }
 .drawBack {
@@ -513,15 +533,15 @@ input[type="number"]:focus {
 }
 
 .miniBack {
-  width: 56px;
-  height: 78px;
-  border-radius: 14px;
+  width: 52px;
+  height: 72px;
+  border-radius: 16px;
   background-image: url("./assets/card-back.png");
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
-  border: 1px solid rgba(255,255,255,0.22);
-  box-shadow: none;
+  border: 1px solid rgba(0,0,0,0.16);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
   display: grid;
   place-items: center;
   font-size: 18px;
@@ -557,7 +577,7 @@ input[type="number"]:focus {
     radial-gradient(220px 120px at 20% 10%, rgba(0,0,0,0.06), transparent 60%),
     linear-gradient(180deg, rgba(255,255,255,1), rgba(247,249,255,1));
   border: 1px solid rgba(0,0,0,0.16);
-  box-shadow: none;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
   display: grid;
   grid-template-rows: auto 1fr auto;
   gap: 6px;
@@ -598,18 +618,33 @@ input[type="number"]:focus {
 .faceCard[data-suit="C"] .suit,
 .faceCard[data-suit="S"] .centerSuit,
 .faceCard[data-suit="C"] .centerSuit { color: #1b1f2a; }
-.faceCard.joker {
-  border-color: rgba(255, 209, 102, 0.30);
-  background:
-    radial-gradient(220px 120px at 20% 10%, rgba(0,0,0,0.06), transparent 60%),
-    linear-gradient(180deg, rgba(255,236,182,1), rgba(255,255,255,1));
+.faceCard.joker.imgCard {
+  /* JOKER金卡：纯图片模式，保留黑边 */
+  padding: 0;
+  background: transparent;
+  border: 1px solid rgba(0,0,0,0.16); /* 和普通卡一样的黑边 */
+}
+
+.faceCard.joker.imgCard .cardContent {
+  grid-template-rows: 1fr;
+}
+
+.faceCard.joker.imgCard .imgWrap {
+  width: 100%;
+  height: 100%;
+}
+
+.faceCard.joker.imgCard .cardImg {
+  object-fit: contain;
+  width: 100%;
+  height: 100%;
 }
 .faceCard {
   cursor: pointer;
   user-select: none;
   /* Keep outline present but transparent to avoid "black flash" on toggle */
-  outline: 2px solid rgba(122, 162, 255, 0);
-  outline-offset: 0px;
+  outline: 3px solid rgba(122, 162, 255, 0);
+  outline-offset: -3px; /* 向内偏移3px，完全贴合边缘 */
   /* Use ease-out for selection/drag snapback (no rebound) */
   transition: transform 260ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 120ms ease, border-color 120ms ease, outline-color 120ms ease;
   pointer-events: auto;
@@ -618,7 +653,7 @@ input[type="number"]:focus {
 .faceCard.dealAnim {
   /* One composited transform animation: off-canvas -> overshoot -> settle */
   animation-name: dealEnter;
-  animation-duration: 560ms;
+  animation-duration: 420ms;
   animation-timing-function: linear; /* per-segment easings are set in keyframes */
   animation-iteration-count: 1;
   animation-fill-mode: both;
@@ -627,22 +662,43 @@ input[type="number"]:focus {
 }
 @keyframes dealEnter {
   0% {
+    /* 从下方屏幕外开始 */
     transform: translateX(-50%)
       translateX(calc(var(--x, 0px) + var(--dx)))
-      translateY(calc(var(--y, 0px) + var(--dy) + 420px))
-      rotate(var(--rot, 0deg))
-      scale(var(--s, 1));
-    animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+      translateY(calc(var(--y, 0px) + var(--dy) + 320px))
+      rotate(calc(var(--rot, 0deg) + 60deg))
+      scale(calc(var(--s, 1) * 0.9));
+    animation-timing-function: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  }
+  50% {
+    /* 波浪高点：轻微向上过冲 */
+    transform: translateX(-50%)
+      translateX(calc(var(--x, 0px) + var(--dx)))
+      translateY(calc(var(--y, 0px) + var(--dy) - 7px))
+      rotate(calc(var(--rot, 0deg) + 3deg))
+      scale(calc(var(--s, 1) * 1.1));
+    animation-timing-function: cubic-bezier(0.55, 0.085, 0.68, 0.53);
   }
   72% {
+    /* 下落到略低于目标 */
     transform: translateX(-50%)
       translateX(calc(var(--x, 0px) + var(--dx)))
-      translateY(calc(var(--y, 0px) + var(--dy) - 14px))
+      translateY(calc(var(--y, 0px) + var(--dy) + 1px))
       rotate(var(--rot, 0deg))
-      scale(var(--s, 1));
-    animation-timing-function: cubic-bezier(0.65, 0, 0.35, 1);
+      scale(calc(var(--s, 1) * 0.998));
+    animation-timing-function: cubic-bezier(0.45, 0, 0.55, 1);
+  }
+  88% {
+    /* 轻微回弹 */
+    transform: translateX(-50%)
+      translateX(calc(var(--x, 0px) + var(--dx)))
+      translateY(calc(var(--y, 0px) + var(--dy)))
+      rotate(var(--rot, 0deg))
+      scale(calc(var(--s, 1) * 1.001));
+    animation-timing-function: cubic-bezier(0.45, 0, 0.55, 1);
   }
   100% {
+    /* 最终稳定位置 */
     transform: translateX(-50%)
       translateX(calc(var(--x, 0px) + var(--dx)))
       translateY(calc(var(--y, 0px) + var(--dy)))
@@ -689,7 +745,7 @@ input[type="number"]:focus {
   border-color: var(--ring);
   /* Fade in highlight by changing opacity only */
   outline-color: rgba(122, 162, 255, 0.55);
-  box-shadow: none;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.25); /* 选中时加深阴影 */
   transform: translateX(-50%)
     translateX(calc(var(--x, 0px) + var(--dx)))
     translateY(calc(var(--y, 0px) + var(--dy) - 18px))
@@ -699,31 +755,32 @@ input[type="number"]:focus {
 .faceCard.hintPulse {
   /* Manual hint: only pulse highlight opacity (no scaling / no moving) */
   animation: hintPulse 1.2s ease-in-out infinite;
-  border-color: rgba(255, 209, 102, 0.55);
-  outline: 2px solid rgba(255, 209, 102, 0.25);
+  border-color: rgba(255, 230, 0, 0.65);
+  outline: 2px solid rgba(255, 230, 0, 0.35);
   outline-offset: 0px;
   box-shadow: none;
 }
 
 @keyframes hintPulse {
-  0%   { outline-color: rgba(255, 209, 102, 0.18); border-color: rgba(255, 209, 102, 0.35); }
-  50%  { outline-color: rgba(255, 209, 102, 0.85); border-color: rgba(255, 209, 102, 0.80); }
-  100% { outline-color: rgba(255, 209, 102, 0.18); border-color: rgba(255, 209, 102, 0.35); }
+  0%   { outline-color: rgba(255, 230, 0, 0.25); border-color: rgba(255, 230, 0, 0.45); }
+  50%  { outline-color: rgba(255, 230, 0, 0.95); border-color: rgba(255, 230, 0, 0.90); }
+  100% { outline-color: rgba(255, 230, 0, 0.25); border-color: rgba(255, 230, 0, 0.45); }
 }
 
-.faceCard.hintPulseAuto {
+.faceCard.hintPulseAuto,
+.miniBack.hintPulseAuto {
   /* Auto hint: pulse highlight + breathing scale on the whole card */
   animation: hintPulseAutoBreath 1.8s ease-in-out infinite;
-  border-color: rgba(255, 209, 102, 0.55);
-  outline: 2px solid rgba(255, 209, 102, 0.25);
+  border-color: rgba(255, 230, 0, 0.65);
+  outline: 2px solid rgba(255, 230, 0, 0.35);
   outline-offset: 0px;
   box-shadow: none;
 }
 
 @keyframes hintPulseAutoBreath {
   0% {
-    outline-color: rgba(255, 209, 102, 0.18);
-    border-color: rgba(255, 209, 102, 0.35);
+    outline-color: rgba(255, 230, 0, 0.25);
+    border-color: rgba(255, 230, 0, 0.45);
     transform: translateX(-50%)
       translateX(calc(var(--x, 0px) + var(--dx)))
       translateY(calc(var(--y, 0px) + var(--dy)))
@@ -731,22 +788,45 @@ input[type="number"]:focus {
       scale(1);
   }
   50% {
-    outline-color: rgba(255, 209, 102, 0.88);
-    border-color: rgba(255, 209, 102, 0.85);
+    outline-color: rgba(255, 230, 0, 0.95);
+    border-color: rgba(255, 230, 0, 0.90);
     transform: translateX(-50%)
       translateX(calc(var(--x, 0px) + var(--dx)))
-      translateY(calc(var(--y, 0px) + var(--dy)))
+      translateY(calc(var(--y, 0px) + var(--dy) - 12px))
       rotate(var(--rot, 0deg))
-      scale(1.06);
+      scale(1.12);
   }
   100% {
-    outline-color: rgba(255, 209, 102, 0.18);
-    border-color: rgba(255, 209, 102, 0.35);
+    outline-color: rgba(255, 230, 0, 0.25);
+    border-color: rgba(255, 230, 0, 0.45);
     transform: translateX(-50%)
       translateX(calc(var(--x, 0px) + var(--dx)))
       translateY(calc(var(--y, 0px) + var(--dy)))
       rotate(var(--rot, 0deg))
       scale(1);
+  }
+}
+
+/* miniBack 专用的提示动画（适配其定位方式） */
+.miniBack.hintPulseAuto {
+  animation: hintPulseAutoBreathMiniBack 1.8s ease-in-out infinite;
+}
+
+@keyframes hintPulseAutoBreathMiniBack {
+  0% {
+    outline-color: rgba(255, 230, 0, 0.25);
+    border-color: rgba(255, 230, 0, 0.45);
+    transform: translate(-50%, -50%) translateY(0px) rotate(var(--srot, 0deg)) scale(1);
+  }
+  50% {
+    outline-color: rgba(255, 230, 0, 0.95);
+    border-color: rgba(255, 230, 0, 0.90);
+    transform: translate(-50%, -50%) translateY(-10px) rotate(var(--srot, 0deg)) scale(1.15);
+  }
+  100% {
+    outline-color: rgba(255, 230, 0, 0.25);
+    border-color: rgba(255, 230, 0, 0.45);
+    transform: translate(-50%, -50%) translateY(0px) rotate(var(--srot, 0deg)) scale(1);
   }
 }
 
@@ -789,7 +869,7 @@ input[type="number"]:focus {
   display: grid;
   place-items: center;
   background: rgba(0,0,0,0.55);
-  backdrop-filter: blur(8px);
+  backdrop-filter: blur(3px);
 }
 .endOverlay.hidden { display: none; }
 .endCard {
@@ -825,7 +905,6 @@ input[type="number"]:focus {
   inset: 0;
   z-index: 10002;
   background: rgba(0,0,0,0.65);
-  backdrop-filter: blur(4px);
   display: grid;
   place-items: center;
 }
@@ -845,7 +924,7 @@ input[type="number"]:focus {
   border-radius: 12px;
 }
 .drawHint {
-  margin-top: 34px;
+  margin-top: 14px;
   text-align: center;
   font-size: 13px;
   font-weight: 800;
@@ -867,6 +946,8 @@ input[type="number"]:focus {
   -webkit-overflow-scrolling: touch;
   /* hide native scrollbar; we render a custom one that animates */
   scrollbar-width: none;
+  position: relative;
+  z-index: 10;
 }
 .drawRow::-webkit-scrollbar { display: none; }
 .drawRow.instant .drawBack {
@@ -876,9 +957,9 @@ input[type="number"]:focus {
   opacity: 1 !important;
 }
 .drawBack {
-  width: 160px;
-  height: 224px;
-  border-radius: 22px;
+  width: 140px;
+  height: 196px;
+  border-radius: 20px;
   background-image: url("./assets/card-back.png");
   background-size: cover;
   background-position: center;
@@ -887,9 +968,12 @@ input[type="number"]:focus {
   user-select: none;
   flex: 0 0 auto;
   scroll-snap-align: none;
-  transform: translateY(18px) translateX(var(--preX, 0px));
+  /* 初始状态：所有卡片从左侧堆叠位置开始，带透明度 */
+  transform: translateY(0px) translateX(var(--preX, 0px)) scale(0.95);
   opacity: 0;
-  transition: transform 420ms cubic-bezier(0.22, 1, 0.36, 1), opacity 260ms ease;
+  transition: transform 320ms cubic-bezier(0.34, 1.56, 0.64, 1), opacity 220ms ease-out;
+  isolation: isolate;
+  will-change: transform, opacity;
 }
 .upstreamHandGhost {
   position: fixed;
@@ -899,16 +983,14 @@ input[type="number"]:focus {
   will-change: transform;
 }
 .drawBack.in {
-  transform: translateY(0px) translateX(0px);
-  opacity: 1;
+  transform: translateY(0px) translateX(0px) scale(1);
+  opacity: 1 !important;
+  /* 保持弹性曲线，让排开效果有回弹感 */
+  transition: transform 320ms cubic-bezier(0.34, 1.56, 0.64, 1), opacity 220ms ease-out;
 }
-/* No hover response on draw cards */
-.drawBack:hover {
-  transform: translateY(0px);
-}
-/* Click (press) gives a slight sink */
-.drawBack:active {
-  transform: translateY(6px);
+
+.drawBack.in:active {
+  transform: translateY(8px) translateX(0px) scale(0.98);
 }
 
 /* Transition ghost: pile -> spread */
@@ -962,10 +1044,10 @@ input[type="number"]:focus {
   max-height: min(78vh, 680px);
   overflow: hidden;
   border-radius: 18px;
-  background: linear-gradient(180deg, rgba(255,255,255,0.14), rgba(255,255,255,0.08));
-  border: 1px solid rgba(255,255,255,0.18);
+  background: linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0.05));
+  border: 1px solid rgba(255,255,255,0.20);
   box-shadow: 0 26px 60px rgba(0,0,0,0.35);
-  color: rgba(255,255,255,0.92);
+  color: rgba(255,255,255,0.98);
 }
 .tunerPanel.hidden { display: none; }
 .tunerHeader {
@@ -976,21 +1058,21 @@ input[type="number"]:focus {
   padding: 12px 12px 10px;
   border-bottom: 1px solid rgba(255,255,255,0.10);
 }
-.tunerTitle { font-weight: 950; letter-spacing: 0.2px; }
+.tunerTitle { font-weight: 950; letter-spacing: 0.2px; color: rgba(255,255,255,0.98); text-shadow: 0 1px 4px rgba(0,0,0,0.4); }
 .tunerBody { padding: 10px 12px; overflow: auto; max-height: min(60vh, 520px); }
-.tunerHint { font-size: 12px; color: rgba(255,255,255,0.76); line-height: 1.4; }
+.tunerHint { font-size: 12px; color: rgba(255,255,255,0.90); line-height: 1.4; text-shadow: 0 1px 3px rgba(0,0,0,0.3); }
 .tunerControls { margin-top: 10px; display: grid; gap: 12px; }
 .tunerGroup {
   padding: 10px;
   border-radius: 14px;
-  background: rgba(0,0,0,0.16);
-  border: 1px solid rgba(255,255,255,0.10);
+  background: rgba(0,0,0,0.25);
+  border: 1px solid rgba(255,255,255,0.15);
 }
-.tunerGroupTitle { font-weight: 900; font-size: 13px; margin-bottom: 8px; }
+.tunerGroupTitle { font-weight: 900; font-size: 13px; margin-bottom: 8px; color: rgba(255,255,255,0.98); text-shadow: 0 1px 3px rgba(0,0,0,0.4); }
 .tunerRow { display: grid; grid-template-columns: 78px 1fr 74px; align-items: center; gap: 10px; margin-top: 8px; }
-.tunerRow label { font-size: 12px; color: rgba(255,255,255,0.78); }
+.tunerRow label { font-size: 12px; color: rgba(255,255,255,0.92); text-shadow: 0 1px 2px rgba(0,0,0,0.3); }
 .tunerRow input[type="range"] { width: 100%; }
-.tunerVal { font-variant-numeric: tabular-nums; font-size: 12px; color: rgba(255,255,255,0.86); text-align: right; }
+.tunerVal { font-variant-numeric: tabular-nums; font-size: 12px; color: rgba(255,255,255,0.95); text-align: right; text-shadow: 0 1px 2px rgba(0,0,0,0.3); }
 .tunerNum {
   width: 100%;
   padding: 6px 8px;
@@ -1002,25 +1084,16 @@ input[type="number"]:focus {
 .tableBg {
   position: relative;
   width: 100%;
-  max-width: 980px;
+  max-width: 880px;
   margin: 0 auto;
-  aspect-ratio: 16 / 9;
+  aspect-ratio: 5501 / 2552;
   border-radius: 18px;
-  overflow: visible;
+  overflow: hidden;
   box-shadow: var(--shadow);
-  background-color: transparent;
-}
-
-.tableBg::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: 18px;
   background-color: #2b4a2d;
   background-image: url("./assets/table.png");
-  background-size: cover;
-  background-position: center;
-  z-index: -1;
+  background-size: 100% calc(100% + 25px);
+  background-position: bottom center;
 }
 
 /* ===== Image-based action buttons positioned like the reference ===== */
@@ -1069,7 +1142,7 @@ input[type="number"]:focus {
 }
 .uiBtn img {
   display: block;
-  width: 138px;
+  width: calc(138px * var(--scale-ui-buttons, 1));
   height: auto;
   pointer-events: none;
   user-select: none;
@@ -1079,6 +1152,21 @@ input[type="number"]:focus {
 .uiBtn:active {
   --pressY: 4px;
 }
+
+/* 结束回合按钮呼吸提示动画 */
+.uiBtn.hintPulseAuto {
+  animation: uiBtnHintPulse 1.8s ease-in-out infinite;
+}
+
+@keyframes uiBtnHintPulse {
+  0%, 100% {
+    transform: translate(var(--btnX), var(--btnY)) scale(1);
+  }
+  50% {
+    transform: translate(var(--btnX), var(--btnY)) scale(1.1);
+  }
+}
+
 @media (max-width: 520px) {
   .uiActionBar { gap: 12px; top: 64%; }
   .uiBtn img { width: 112px; }
@@ -1098,18 +1186,156 @@ input[type="number"]:focus {
   justify-content: space-between;
   gap: 10px;
   padding: 6px 8px;
+  position: relative;
+  z-index: 10;
 }
-.zoneName,
-.zoneCount {
+.zoneName {
   pointer-events: none;
   font-size: 12px;
   font-weight: 850;
   color: rgba(255,255,255,0.92);
   text-shadow: 0 2px 10px rgba(0,0,0,0.55);
 }
+
+/* Per-zone name position overrides */
+.zone-top .zoneName {
+  transform: translate(var(--zone-name-top-x, 0px), var(--zone-name-top-y, 0px));
+}
+.zone-left .zoneName {
+  transform: translate(var(--zone-name-left-x, 0px), var(--zone-name-left-y, 0px));
+}
+.zone-right .zoneName {
+  transform: translate(var(--zone-name-right-x, 0px), var(--zone-name-right-y, 0px));
+}
+.zone-bottom .zoneName {
+  transform: translate(var(--zone-name-bottom-x, 0px), var(--zone-name-bottom-y, 0px));
+}
+
 .zoneCount {
-  font-weight: 750;
-  color: rgba(255,255,255,0.86);
+  pointer-events: none;
+  /* 木质标牌背景 */
+  background-image: url("./assets/ui_buttons/hand-count.png");
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
+  background-position: left center;
+  width: 82px; /* 整体宽度从90px减少到82px */
+  height: 28px; /* 高度从32px减少到28px */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* 文字位置可调整 */
+  padding-left: var(--hand-count-text-x, 62px);
+  padding-top: var(--hand-count-text-y, 0px);
+  padding-right: 10px;
+  padding-bottom: 6px;
+  font-weight: 900;
+  font-size: 14px; /* 字体从18px→16px→14px */
+  color: rgba(255,255,255,0.98);
+  text-shadow:
+    0 2px 4px rgba(0,0,0,0.8),
+    0 1px 2px rgba(0,0,0,0.6);
+  font-variant-numeric: tabular-nums;
+  /* 绝对定位，不占据flex空间 */
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  margin-top: -14px; /* 更新为 -height/2，配合新高度28px */
+  transform-origin: center;
+}
+
+/* Per-zone positioning with global scale */
+.zone-top .zoneCount {
+  transform: translate(var(--hand-count-top-x, 0px), var(--hand-count-top-y, 0px))
+             scale(var(--hand-count-scale-x, 1), var(--hand-count-scale-y, 1));
+  padding-left: var(--hand-count-top-text-x, 62px);
+  padding-top: var(--hand-count-top-text-y, 0px);
+}
+.zone-left .zoneCount {
+  transform: translate(var(--hand-count-left-x, 0px), var(--hand-count-left-y, 0px))
+             scale(var(--hand-count-scale-x, 1), var(--hand-count-scale-y, 1));
+  padding-left: var(--hand-count-left-text-x, 62px);
+  padding-top: var(--hand-count-left-text-y, 0px);
+}
+.zone-right .zoneCount {
+  transform: translate(var(--hand-count-right-x, 0px), var(--hand-count-right-y, 0px))
+             scale(var(--hand-count-scale-x, 1), var(--hand-count-scale-y, 1));
+  padding-left: var(--hand-count-right-text-x, 62px);
+  padding-top: var(--hand-count-right-text-y, 0px);
+}
+.zone-bottom .zoneCount {
+  transform: translate(var(--hand-count-bottom-x, 0px), var(--hand-count-bottom-y, 0px))
+             scale(calc(var(--hand-count-scale-x, 1) * 1.5), calc(var(--hand-count-scale-y, 1) * 1.5));
+  padding-left: var(--hand-count-bottom-text-x, 62px);
+  padding-top: var(--hand-count-bottom-text-y, 0px);
+}
+
+/* 提示手 */
+.hintHand {
+  position: fixed;
+  width: 60px;
+  height: 60px;
+  background-image: url("./assets/ui_buttons/hint-hand.png");
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+  pointer-events: none;
+  z-index: 10100;
+  opacity: 1;
+}
+
+.hintHand.clicking {
+  animation: hintHandClick 0.6s ease-in-out infinite;
+}
+
+@keyframes hintHandClick {
+  0%, 100% {
+    transform: scale(1) translateY(0px);
+  }
+  50% {
+    transform: scale(0.9) translateY(3px);
+  }
+}
+
+/* 回合开始面板弹窗 */
+.roundStartOverlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: radial-gradient(ellipse at center, rgba(0,10,25,0.75) 0%, rgba(0,0,0,0.88) 100%);
+  backdrop-filter: blur(3px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10040; /* 低于乌龟牌容器(10050)，确保粒子效果在前 */
+  animation: fadeIn 0.3s ease-out;
+}
+
+.roundStartPanel {
+  cursor: pointer;
+  animation: scaleIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.roundStartPanel img {
+  max-width: 45vw;
+  max-height: 45vh;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  pointer-events: none;
+  display: block;
+}
+
+@keyframes scaleIn {
+  0% {
+    transform: scale(0.8);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
 }
 
 /* Tuned for /assets/table.png (5504x3072) to match the wood planks in the reference. */
@@ -1138,23 +1364,31 @@ input[type="number"]:focus {
 /* Discard pile face-up cards */
 .discardCard {
   position: absolute;
-  width: 92px;
-  height: 132px;
-  border-radius: 18px;
+  --base-width: 92px;
+  --base-height: 132px;
+  width: calc(var(--base-width) * var(--scale-discard-pile, 1));
+  height: calc(var(--base-height) * var(--scale-discard-pile, 1));
+  border-radius: calc(18px * var(--scale-discard-pile, 1));
   background:
     radial-gradient(220px 120px at 20% 10%, rgba(0,0,0,0.06), transparent 60%),
     linear-gradient(180deg, rgba(255,255,255,1), rgba(247,249,255,1));
   border: 1px solid rgba(0,0,0,0.16);
   box-shadow: none;
   color: rgba(16, 24, 40, 0.92);
-  padding: 10px 10px;
+  padding: calc(10px * var(--scale-discard-pile, 1));
   display: grid;
   grid-template-rows: auto 1fr auto;
 }
-.discardCard.joker {
-  background:
-    radial-gradient(220px 120px at 20% 10%, rgba(0,0,0,0.06), transparent 60%),
-    linear-gradient(180deg, rgba(255,236,182,1), rgba(255,255,255,1));
+.discardCard.joker.imgDiscard {
+  /* JOKER金卡：纯图片，保留黑边 */
+  padding: 0;
+  background: transparent;
+  border: 1px solid rgba(0,0,0,0.16);
+}
+.discardCard.joker.imgDiscard .cardImg {
+  object-fit: contain;
+  width: 100%;
+  height: 100%;
 }
 
 /* Let tuner control zone sizes (no hard-coded seatHand heights) */
@@ -1162,18 +1396,38 @@ input[type="number"]:focus {
 .zone-bottom .yourHand { height: 100%; }
 
 .miniBack {
-  width: 92px;
-  height: 132px;
-  border-radius: 18px;
-  border: 1px solid rgba(255,255,255,0.20);
-  box-shadow: none;
+  --base-width: 52px;
+  --base-height: 72px;
+  width: 52px;
+  height: 72px;
+  border-radius: 16px;
+  border: 1px solid rgba(0,0,0,0.16);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+.zone-top .miniBack {
+  width: calc(var(--base-width) * var(--scale-ai-top-card, 1));
+  height: calc(var(--base-height) * var(--scale-ai-top-card, 1));
+  border-radius: calc(8px * var(--scale-ai-top-card, 1));
+}
+
+/* Larger cards for left/right AI players */
+.zone-left .miniBack,
+.zone-right .miniBack {
+  --base-width: 64px;
+  --base-height: 89px;
+  width: calc(var(--base-width) * var(--scale-ai-side-card, 1));
+  height: calc(var(--base-height) * var(--scale-ai-side-card, 1));
+  border-radius: calc(10px * var(--scale-ai-side-card, 1));
 }
 
 /* Bottom hand: tighter overlap & minimal rotation like the reference */
 .faceCard {
-  width: 86px;
-  height: 124px;
-  border-radius: 16px;
+  --base-width: 86px;
+  --base-height: 124px;
+  width: calc(var(--base-width) * var(--scale-player-card, 1));
+  height: calc(var(--base-height) * var(--scale-player-card, 1));
+  border-radius: calc(16px * var(--scale-player-card, 1));
 }
 
 /* Mobile adaptations */
@@ -1207,7 +1461,7 @@ input[type="number"]:focus {
   .miniBack {
     width: 68px;
     height: 98px;
-    border-radius: 13px;
+    border-radius: 16px;
   }
 
   /* Adjust hand height */
@@ -1252,9 +1506,9 @@ input[type="number"]:focus {
 
   /* Adjust draw overlay for mobile */
   .drawBack {
-    width: 130px;
-    height: 187px;
-    border-radius: 16px;
+    width: 115px;
+    height: 161px;
+    border-radius: 15px;
   }
 
   /* Smaller reveal cards */
@@ -1290,7 +1544,7 @@ input[type="number"]:focus {
   .miniBack {
     width: 56px;
     height: 80px;
-    border-radius: 11px;
+    border-radius: 16px;
   }
 
   .yourHand {
@@ -1309,9 +1563,9 @@ input[type="number"]:focus {
   }
 
   .drawBack {
-    width: 110px;
-    height: 158px;
-    border-radius: 14px;
+    width: 95px;
+    height: 133px;
+    border-radius: 13px;
   }
 }
 

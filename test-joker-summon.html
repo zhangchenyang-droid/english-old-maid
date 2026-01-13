@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Joker Summon Effect Test - 大王卡凝聚特效测试</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: linear-gradient(180deg, #0a1628 0%, #020812 100%);
+            color: #a3d4ff;
+            font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+        }
+        canvas {
+            display: block;
+        }
+        .ui-container {
+            position: absolute;
+            bottom: 3rem;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 360px;
+            z-index: 10;
+            text-align: center;
+        }
+        .summon-panel {
+            background: rgba(10, 20, 40, 0.92);
+            padding: 1.5rem;
+            border-radius: 1rem;
+            border: 1px solid rgba(0, 150, 255, 0.3);
+            backdrop-filter: blur(20px);
+            box-shadow: 0 12px 48px rgba(0, 0, 0, 0.9), 0 0 24px rgba(0, 100, 255, 0.15);
+        }
+        input[type=range] {
+            -webkit-appearance: none;
+            width: 100%;
+            background: #0a1525;
+            height: 5px;
+            border-radius: 3px;
+            outline: none;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 20px;
+            width: 20px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #00d2ff, #0096ff);
+            cursor: pointer;
+            box-shadow: 0 0 18px #00d2ff, 0 3px 8px rgba(0,0,0,0.4);
+            transition: transform 0.15s;
+        }
+        input[type=range]::-webkit-slider-thumb:hover {
+            transform: scale(1.1);
+        }
+        .label-text {
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 2.5px;
+            font-weight: 900;
+            color: #00d2ff;
+            text-shadow: 0 0 10px rgba(0, 210, 255, 0.5);
+        }
+        .btn {
+            width: 100%;
+            padding: 0.875rem 1.5rem;
+            background: linear-gradient(135deg, #1e40af, #0ea5e9);
+            border: none;
+            border-radius: 0.75rem;
+            font-size: 0.75rem;
+            font-weight: 900;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            color: white;
+            cursor: pointer;
+            transition: all 0.25s;
+            box-shadow: 0 4px 14px rgba(14, 165, 233, 0.4), inset 0 1px 0 rgba(255,255,255,0.2);
+        }
+        .btn:hover {
+            background: linear-gradient(135deg, #2563eb, #06b6d4);
+            box-shadow: 0 6px 20px rgba(14, 165, 233, 0.6), inset 0 1px 0 rgba(255,255,255,0.3);
+            transform: translateY(-2px);
+        }
+        .btn:active {
+            transform: translateY(0);
+            box-shadow: 0 2px 8px rgba(14, 165, 233, 0.4);
+        }
+        .stats {
+            margin-top: 1rem;
+            font-size: 0.75rem;
+            color: rgba(163, 212, 255, 0.7);
+            text-align: left;
+        }
+        .stats div {
+            margin-bottom: 0.25rem;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="ui-container">
+        <div class="summon-panel">
+            <div class="flex justify-between items-center mb-4">
+                <span class="label-text">Materializing</span>
+                <span id="progress-val" class="text-xs font-mono text-cyan-400 font-bold">0%</span>
+            </div>
+            <input type="range" id="progress-slider" min="0" max="1" step="0.001" value="0" class="mb-6">
+            <button id="play-btn" class="btn mb-2">
+                🎴 Summon Joker Card
+            </button>
+            <button id="reset-btn" class="btn" style="background: linear-gradient(135deg, #64748b, #475569); box-shadow: 0 4px 14px rgba(71, 85, 105, 0.4);">
+                ↻ Reset
+            </button>
+            <div class="stats">
+                <div>⏱️ Duration: <span id="duration-val">1.8s</span></div>
+                <div>🎨 Particles: <span id="particle-count">15000</span></div>
+                <div>📐 Card Size: <span id="card-size">2.2 × 3.2</span></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Load Joker Summon Component -->
+    <script src="./src/joker-summon.js"></script>
+
+    <script>
+        let summonEffect = null;
+        let isPlaying = false;
+
+        const slider = document.getElementById('progress-slider');
+        const label = document.getElementById('progress-val');
+        const playBtn = document.getElementById('play-btn');
+        const resetBtn = document.getElementById('reset-btn');
+
+        // Check if JokerSummon is loaded
+        if (!window.JokerSummon) {
+            alert('JokerSummon component not loaded! Make sure joker-summon.js is in ./src/');
+        }
+
+        // Manual slider control
+        slider.oninput = (e) => {
+            const val = parseFloat(e.target.value);
+            label.innerText = Math.round(val * 100) + '%';
+
+            // Update existing effect if playing
+            if (summonEffect && summonEffect.card && summonEffect.cardMaterial) {
+                summonEffect.cardMaterial.uniforms.uProgress.value = val;
+            }
+            if (summonEffect && summonEffect.particleMaterial) {
+                summonEffect.particleMaterial.uniforms.uProgress.value = val;
+            }
+        };
+
+        // Play button
+        playBtn.onclick = () => {
+            if (isPlaying) return;
+
+            isPlaying = true;
+            playBtn.textContent = '⏳ Summoning...';
+            playBtn.disabled = true;
+
+            // Destroy previous effect if exists
+            if (summonEffect) {
+                summonEffect.destroy();
+            }
+
+            // Create new summon effect
+            summonEffect = window.JokerSummon.createSummonEffect({
+                jokerImageUrl: './assets/joker.png',
+                duration: 1.8,
+                onComplete: () => {
+                    console.log('[Test] Summon complete!');
+                    playBtn.textContent = '✓ Complete! Play Again';
+                    playBtn.disabled = false;
+                    isPlaying = false;
+
+                    // Auto-reset after 2 seconds
+                    setTimeout(() => {
+                        if (summonEffect) {
+                            summonEffect.destroy();
+                            summonEffect = null;
+                        }
+                        playBtn.textContent = '🎴 Summon Joker Card';
+                        slider.value = 0;
+                        label.innerText = '0%';
+                    }, 2000);
+                }
+            });
+
+            summonEffect.play();
+            slider.value = 0;
+        };
+
+        // Reset button
+        resetBtn.onclick = () => {
+            if (summonEffect) {
+                summonEffect.destroy();
+                summonEffect = null;
+            }
+            slider.value = 0;
+            label.innerText = '0%';
+            playBtn.textContent = '🎴 Summon Joker Card';
+            playBtn.disabled = false;
+            isPlaying = false;
+        };
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            if (e.key === ' ' || e.key === 'Enter') {
+                e.preventDefault();
+                if (!isPlaying) playBtn.click();
+            }
+            if (e.key === 'r' || e.key === 'R') {
+                e.preventDefault();
+                resetBtn.click();
+            }
+        });
+
+        console.log('[Test Page] Ready! Press SPACE or ENTER to summon, R to reset.');
+    </script>
+
+</body>
+</html>

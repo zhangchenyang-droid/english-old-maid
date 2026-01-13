@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Test Game.js Load</title>
+</head>
+<body>
+  <h1>Testing game.js load...</h1>
+  <div id="result"></div>
+
+  <script src="./deck/image_pairs.js"></script>
+  <script src="./src/game.js"></script>
+  <script>
+    const resultDiv = document.getElementById('result');
+
+    try {
+      // Test if Game object exists
+      if (typeof window.Game === 'undefined') {
+        throw new Error('window.Game is undefined');
+      }
+
+      // Test buildDeckFromImagePairs
+      const deck = window.Game.buildDeckFromImagePairs(window.__IMAGE_PAIRS__);
+      console.log('Deck built:', deck.length, 'cards');
+
+      // Test initialDeal
+      const players = window.Game.initialDeal(deck, 4);
+      console.log('Players:', players);
+
+      let output = '<h2 style="color: green;">✓ 加载成功！</h2>';
+      output += '<h3>发牌结果：</h3>';
+      players.forEach((p, i) => {
+        output += `<p>${p.name}: ${p.hand.length} 张牌</p>`;
+
+        // Check for duplicate pairId+side
+        const seen = new Set();
+        const duplicates = [];
+        p.hand.forEach(c => {
+          if (c.pairId) {
+            const key = `${c.pairId}_${c.side}`;
+            if (seen.has(key)) {
+              duplicates.push(key);
+            }
+            seen.add(key);
+          }
+        });
+
+        if (duplicates.length > 0) {
+          output += `<p style="color: red;">⚠️ 发现重复: ${duplicates.join(', ')}</p>`;
+        }
+      });
+
+      // Count total cards
+      const totalCards = players.reduce((sum, p) => sum + p.hand.length, 0);
+      output += `<p><strong>总牌数：${totalCards}</strong></p>`;
+
+      resultDiv.innerHTML = output;
+
+    } catch (err) {
+      resultDiv.innerHTML = `<h2 style="color: red;">✗ 错误</h2><pre>${err.stack}</pre>`;
+      console.error(err);
+    }
+  </script>
+</body>
+</html>

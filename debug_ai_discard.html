@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>AI出牌动画调试</title>
+  <style>
+    body { margin: 20px; font-family: sans-serif; }
+    .debug-box { padding: 10px; margin: 10px 0; background: #f0f0f0; border-radius: 4px; }
+    .error { background: #ffe6e6; color: #c00; }
+    .success { background: #e6ffe6; color: #060; }
+    .warning { background: #fff3e6; color: #c60; }
+    code { background: #e0e0e0; padding: 2px 6px; border-radius: 3px; }
+  </style>
+</head>
+<body>
+  <h1>🔍 AI出牌动画调试工具</h1>
+
+  <div class="debug-box">
+    <h2>使用方法：</h2>
+    <ol>
+      <li>打开游戏：<a href="http://127.0.0.1:8000/english-old-maid/" target="_blank">http://127.0.0.1:8000/english-old-maid/</a></li>
+      <li>打开浏览器控制台 (F12)</li>
+      <li>复制下面的代码并粘贴到控制台</li>
+      <li>开始游戏，等待AI出牌</li>
+      <li>观察控制台输出</li>
+    </ol>
+  </div>
+
+  <div class="debug-box warning">
+    <h2>📋 调试代码 (复制到控制台):</h2>
+    <pre><code id="debug-code">// 监听 AI 出牌动画
+(function() {
+  // 保存原始函数
+  const originalAnimate = HTMLElement.prototype.animate;
+
+  // 拦截所有 animate 调用
+  HTMLElement.prototype.animate = function(keyframes, options) {
+    // 检查是否是 flipContainer
+    if (this.style && this.style.transformStyle === 'preserve-3d') {
+      console.log('🎬 检测到动画元素:', this);
+      console.log('📍 元素位置:', {
+        left: this.style.left,
+        top: this.style.top,
+        zIndex: this.style.zIndex
+      });
+      console.log('📐 元素大小:', {
+        width: this.style.width,
+        height: this.style.height
+      });
+      console.log('🎞️ 关键帧:', keyframes);
+      console.log('⏱️ 选项:', options);
+
+      // 检查元素是否在可视区域
+      const rect = this.getBoundingClientRect();
+      console.log('📦 实际位置 (getBoundingClientRect):', rect);
+
+      if (rect.left < -1000 || rect.top < -1000 || rect.left > window.innerWidth + 1000 || rect.top > window.innerHeight + 1000) {
+        console.error('❌ 元素在屏幕外！');
+      } else {
+        console.log('✅ 元素在屏幕内');
+      }
+
+      // 检查是否被其他元素遮挡
+      const topElement = document.elementFromPoint(rect.left + rect.width/2, rect.top + rect.height/2);
+      if (topElement !== this) {
+        console.warn('⚠️ 元素可能被遮挡，顶层元素是:', topElement);
+      }
+    }
+
+    // 调用原始函数
+    return originalAnimate.call(this, keyframes, options);
+  };
+
+  console.log('✅ AI出牌动画监听器已安装');
+  console.log('💡 现在开始游戏，当AI出牌时会自动打印调试信息');
+})();
+</code></pre>
+  </div>
+
+  <button onclick="copyCode()" style="padding: 10px 20px; font-size: 16px; cursor: pointer;">📋 复制代码到剪贴板</button>
+
+  <div class="debug-box">
+    <h2>🔍 常见问题：</h2>
+    <ul>
+      <li><strong>看不到日志？</strong> → 确认游戏已经开始，等待AI回合</li>
+      <li><strong>元素在屏幕外？</strong> → fromRect 计算错误，需要修复起始位置</li>
+      <li><strong>元素被遮挡？</strong> → z-index 太低，需要提高层级</li>
+      <li><strong>没有红色矩形？</strong> → 动画完成太快，或元素立即被移除</li>
+    </ul>
+  </div>
+
+  <script>
+    function copyCode() {
+      const code = document.getElementById('debug-code').textContent;
+      navigator.clipboard.writeText(code).then(() => {
+        alert('✅ 代码已复制到剪贴板！\n\n现在：\n1. 打开游戏页面\n2. 按 F12 打开控制台\n3. 粘贴代码并按回车');
+      });
+    }
+  </script>
+</body>
+</html>

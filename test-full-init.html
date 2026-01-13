@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Test Full Game Init</title>
+</head>
+<body>
+  <h1>Testing full game initialization...</h1>
+  <div id="result"></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="./deck/image_pairs.js"></script>
+  <script src="./src/joker-summon.js"></script>
+  <script src="./src/game.js"></script>
+  <script>
+    const resultDiv = document.getElementById('result');
+
+    try {
+      // Test createGame
+      const game = window.Game.createGame({
+        pairs: window.__IMAGE_PAIRS__,
+        playerCount: 4,
+        seed: ""
+      });
+
+      console.log('Game created:', game);
+
+      let output = '<h2 style="color: green;">✓ 游戏初始化成功！</h2>';
+      output += '<h3>发牌结果：</h3>';
+
+      game.players.forEach((p, i) => {
+        output += `<p><strong>${p.name}</strong>: ${p.hand.length} 张牌</p>`;
+
+        // Check for duplicate pairId+side
+        const seen = new Set();
+        const duplicates = [];
+        p.hand.forEach(c => {
+          if (c.pairId) {
+            const key = `${c.pairId}_${c.side}`;
+            if (seen.has(key)) {
+              duplicates.push(key);
+            }
+            seen.add(key);
+          }
+        });
+
+        if (duplicates.length > 0) {
+          output += `<p style="color: red;">⚠️ ${p.name} 发现重复: ${duplicates.join(', ')}</p>`;
+        } else {
+          output += `<p style="color: green;">✓ ${p.name} 无重复卡牌</p>`;
+        }
+
+        // Count A/B cards
+        let aCount = 0, bCount = 0;
+        p.hand.forEach(c => {
+          if (c.side === 'A') aCount++;
+          if (c.side === 'B') bCount++;
+        });
+        output += `<p style="margin-left: 20px;">├─ A卡: ${aCount} 张</p>`;
+        output += `<p style="margin-left: 20px;">└─ B卡: ${bCount} 张</p>`;
+      });
+
+      // Count total cards
+      const totalCards = game.players.reduce((sum, p) => sum + p.hand.length, 0);
+      output += `<p><strong>总牌数：${totalCards}</strong> (应该是52)</p>`;
+      output += `<p><strong>Joker状态：</strong>${game.jokerPending ? 'pending' : 'null'}</p>`;
+      output += `<p><strong>当前回合：</strong>玩家 ${game.currentPlayerIndex}</p>`;
+
+      resultDiv.innerHTML = output;
+
+    } catch (err) {
+      resultDiv.innerHTML = `<h2 style="color: red;">✗ 错误</h2><pre>${err.stack}</pre>`;
+      console.error(err);
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>抽牌翻转测试</title>
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        body {
+            background: #0b1020;
+            display: grid;
+            place-items: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+        }
+        .test-container {
+            display: flex;
+            gap: 40px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        .test-card {
+            width: 140px;
+            height: 196px;
+            position: relative;
+            transform-style: preserve-3d;
+            cursor: pointer;
+            border: 2px solid rgba(255,255,255,0.1);
+            border-radius: 18px;
+        }
+        .face {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            backface-visibility: hidden;
+            -webkit-backface-visibility: hidden;
+        }
+        .face-front {
+            transform: rotateY(0deg);
+        }
+        .face-back {
+            transform: rotateY(180deg);
+        }
+        .info {
+            text-align: center;
+            color: white;
+            margin: 20px 0;
+            font-family: monospace;
+        }
+        button {
+            padding: 10px 20px;
+            margin: 10px;
+            background: #1e40af;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        button:hover {
+            background: #2563eb;
+        }
+    </style>
+</head>
+<body>
+    <div class="info">
+        <h1>🎴 抽牌翻转动画测试</h1>
+        <p>点击卡背，观察翻转到正面的动画</p>
+    </div>
+
+    <div class="test-container" id="container"></div>
+
+    <div class="info">
+        <button onclick="resetAll()">重置所有卡牌</button>
+        <button onclick="flipAll()">全部翻转</button>
+    </div>
+
+    <script>
+        const container = document.getElementById('container');
+
+        // 测试卡牌数据
+        const testCards = [
+            { name: 'Bear', img: './assets/animal_cards/10_Bear_A.png' },
+            { name: 'Cat', img: './assets/animal_cards/3_Cat_A.png' },
+            { name: 'Dog', img: './assets/animal_cards/5_Dog_A.png' },
+            { name: 'Joker', img: './assets/joker.png', isJoker: true }
+        ];
+
+        function createTestCard(cardData) {
+            const card = document.createElement('div');
+            card.className = 'test-card';
+            card.style.transform = 'rotateY(180deg)'; // 初始显示背面
+
+            // 正面
+            const front = document.createElement('div');
+            front.className = `face face-front faceCard ${cardData.isJoker ? 'joker' : ''} imgCard`;
+            front.style.margin = '0';
+            front.innerHTML = `
+                <div class="cardContent">
+                    <div class="imgWrap">
+                        <img class="cardImg" src="${cardData.img}" alt="${cardData.name}" draggable="false" />
+                    </div>
+                </div>
+            `;
+
+            // 背面
+            const back = document.createElement('div');
+            back.className = 'face face-back miniBack';
+
+            card.appendChild(front);
+            card.appendChild(back);
+
+            // 点击翻转
+            card.addEventListener('click', () => {
+                flipCard(card);
+            });
+
+            return card;
+        }
+
+        function flipCard(card) {
+            const currentRotation = getRotation(card);
+            const targetRotation = currentRotation === 180 ? 360 : 180;
+
+            console.log(`翻转：${currentRotation}° → ${targetRotation}°`);
+
+            const anim = card.animate(
+                [
+                    { transform: `rotateY(${currentRotation}deg)` },
+                    { transform: `rotateY(${targetRotation}deg)` }
+                ],
+                {
+                    duration: 360,
+                    easing: 'cubic-bezier(0.4, 0, 0.2, 1)',
+                    fill: 'forwards'
+                }
+            );
+
+            anim.onfinish = () => {
+                // 规范化角度（360 → 0）
+                card.style.transform = `rotateY(${targetRotation % 360}deg)`;
+            };
+        }
+
+        function getRotation(card) {
+            const transform = card.style.transform;
+            const match = transform.match(/rotateY\((-?\d+)deg\)/);
+            return match ? parseInt(match[1]) : 0;
+        }
+
+        function resetAll() {
+            container.innerHTML = '';
+            testCards.forEach(cardData => {
+                container.appendChild(createTestCard(cardData));
+            });
+        }
+
+        function flipAll() {
+            document.querySelectorAll('.test-card').forEach(card => {
+                flipCard(card);
+            });
+        }
+
+        // 初始化
+        resetAll();
+    </script>
+</body>
+</html>

@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Joker Flying Test - 大王卡飞行测试</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: linear-gradient(180deg, #0b1020 0%, #020812 100%);
+            font-family: ui-sans-serif, system-ui, sans-serif;
+            color: #fff;
+        }
+        .test-grid {
+            position: fixed;
+            inset: 0;
+            display: grid;
+            grid-template-areas:
+                ". top ."
+                "left center right"
+                ". bottom .";
+            grid-template-columns: 1fr 2fr 1fr;
+            grid-template-rows: 1fr 2fr 1fr;
+            gap: 20px;
+            padding: 40px;
+        }
+        .target-zone {
+            border: 2px dashed rgba(122, 162, 255, 0.3);
+            border-radius: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(255,255,255,0.03);
+            font-size: 14px;
+            color: rgba(255,255,255,0.5);
+            text-align: center;
+            padding: 20px;
+        }
+        .target-zone.top { grid-area: top; }
+        .target-zone.left { grid-area: left; }
+        .target-zone.right { grid-area: right; }
+        .target-zone.bottom { grid-area: bottom; }
+        .target-zone.center { grid-area: center; }
+
+        .controls {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(10, 20, 40, 0.95);
+            padding: 20px;
+            border-radius: 16px;
+            border: 1px solid rgba(0, 150, 255, 0.3);
+            backdrop-filter: blur(20px);
+            box-shadow: 0 12px 48px rgba(0, 0, 0, 0.9);
+            z-index: 1000;
+        }
+        .btn-group {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        .btn {
+            padding: 12px 18px;
+            background: linear-gradient(135deg, #1e40af, #0ea5e9);
+            border: none;
+            border-radius: 10px;
+            font-size: 13px;
+            font-weight: 700;
+            color: white;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .btn:hover {
+            background: linear-gradient(135deg, #2563eb, #06b6d4);
+            transform: translateY(-2px);
+        }
+        .info {
+            font-size: 12px;
+            color: rgba(163, 212, 255, 0.8);
+            text-align: center;
+            margin-top: 10px;
+        }
+
+        /* 3D卡牌样式 */
+        .flying-card-3d {
+            position: fixed;
+            width: 86px;
+            height: 124px;
+            z-index: 10000;
+            transform-style: preserve-3d;
+        }
+        .card-face {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            backface-visibility: hidden;
+            -webkit-backface-visibility: hidden;
+            transform-style: preserve-3d;
+        }
+        .card-front {
+            transform: rotateY(0deg);
+        }
+        .card-back {
+            transform: rotateY(180deg);
+            background-image: url('./assets/card-back.png');
+            background-size: cover;
+            background-position: center;
+            border: 1px solid rgba(0,0,0,0.22);
+            border-radius: 16px;
+        }
+        .joker-img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="test-grid">
+        <div class="target-zone top" data-index="2">
+            上方AI<br>
+            (180° 倒置 + 翻面)
+        </div>
+        <div class="target-zone left" data-index="3">
+            左侧AI<br>
+            (90° 逆时针 + 翻面)
+        </div>
+        <div class="target-zone center">
+            🎴 起点<br>
+            (屏幕中央)
+        </div>
+        <div class="target-zone right" data-index="1">
+            右侧AI<br>
+            (-90° 顺时针 + 翻面)
+        </div>
+        <div class="target-zone bottom" data-index="0">
+            玩家<br>
+            (保持正面，不旋转)
+        </div>
+    </div>
+
+    <div class="controls">
+        <div class="btn-group">
+            <button class="btn" onclick="flyTo(0)">飞向玩家 ↓</button>
+            <button class="btn" onclick="flyTo(1)">飞向右AI →</button>
+            <button class="btn" onclick="flyTo(2)">飞向上AI ↑</button>
+            <button class="btn" onclick="flyTo(3)">飞向左AI ←</button>
+        </div>
+        <div class="info">
+            🎴 点击按钮测试飞行动画<br>
+            观察：弧线轨迹 + 缩小 + 旋转 + 翻面
+        </div>
+    </div>
+
+    <script>
+        let currentAnim = null;
+
+        function flyTo(playerIndex) {
+            // 清除之前的动画
+            if (currentAnim) {
+                currentAnim.remove();
+            }
+
+            const targetZone = document.querySelector(`.target-zone[data-index="${playerIndex}"]`);
+            if (!targetZone) return;
+
+            const targetRect = targetZone.getBoundingClientRect();
+            const startX = window.innerWidth / 2;
+            const startY = window.innerHeight / 2;
+            const endX = targetRect.left + targetRect.width / 2;
+            const endY = targetRect.top + targetRect.height / 2;
+
+            // 创建3D飞行卡牌
+            const flyingCard = document.createElement("div");
+            flyingCard.className = "flying-card-3d";
+            flyingCard.style.left = `${startX - 43}px`;
+            flyingCard.style.top = `${startY - 62}px`;
+
+            // 正面（Joker）
+            const front = document.createElement("div");
+            front.className = "card-face card-front";
+            front.style.border = "1px solid rgba(0,0,0,0.22)";
+            front.style.borderRadius = "16px";
+            front.style.overflow = "hidden";
+            front.innerHTML = `<img class="joker-img" src="./assets/joker.png" alt="joker">`;
+
+            // 背面（卡背）
+            const back = document.createElement("div");
+            back.className = "card-face card-back";
+
+            flyingCard.appendChild(front);
+            flyingCard.appendChild(back);
+            document.body.appendChild(flyingCard);
+            currentAnim = flyingCard;
+
+            // 计算缩放
+            const targetScale = 0.7; // 统一缩小到70%
+
+            // 计算旋转角度
+            let targetRotationZ = 0;
+            if (playerIndex === 1) targetRotationZ = -90;      // 右侧
+            else if (playerIndex === 2) targetRotationZ = 180; // 上方
+            else if (playerIndex === 3) targetRotationZ = 90;  // 左侧
+
+            // 计算弧线
+            const dx = endX - startX;
+            const dy = endY - startY;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            const arcHeight = Math.min(200, distance * 0.4);
+
+            const controlX = (startX + endX) / 2;
+            let controlY = (startY + endY) / 2;
+
+            if (playerIndex === 0) {
+                controlY -= arcHeight; // 向上弧线
+            } else if (playerIndex === 2) {
+                controlY -= arcHeight * 0.5;
+            } else {
+                controlY += arcHeight * 0.3;
+            }
+
+            // 生成关键帧
+            const keyframes = [];
+            const steps = 30;
+
+            for (let i = 0; i <= steps; i++) {
+                const t = i / steps;
+                const easeT = 1 - Math.pow(1 - t, 3); // ease-out
+
+                // 贝塞尔曲线
+                const x = (1 - easeT) * (1 - easeT) * startX +
+                          2 * (1 - easeT) * easeT * controlX +
+                          easeT * easeT * endX;
+                const y = (1 - easeT) * (1 - easeT) * startY +
+                          2 * (1 - easeT) * easeT * controlY +
+                          easeT * easeT * endY;
+
+                const scale = 1.0 + (targetScale - 1.0) * easeT;
+                const rotateZ = targetRotationZ * easeT;
+                const rotateY = playerIndex === 0 ? 0 : easeT * 180;
+
+                keyframes.push({
+                    left: `${x - 43}px`,
+                    top: `${y - 62}px`,
+                    transform: `scale(${scale}) rotateZ(${rotateZ}deg) rotateY(${rotateY}deg)`,
+                    opacity: 1
+                });
+            }
+
+            const anim = flyingCard.animate(keyframes, {
+                duration: 700,
+                easing: 'linear',
+                fill: 'forwards'
+            });
+
+            anim.onfinish = () => {
+                setTimeout(() => {
+                    flyingCard.style.transition = 'opacity 300ms';
+                    flyingCard.style.opacity = '0';
+                    setTimeout(() => flyingCard.remove(), 300);
+                }, 500);
+            };
+        }
+
+        console.log('🎴 Joker Flying Test Ready!');
+        console.log('点击按钮查看飞向不同玩家的效果：');
+        console.log('- 玩家：保持正面，向上弧线');
+        console.log('- AI：翻面显示卡背，带旋转');
+    </script>
+
+</body>
+</html>

@@ -1,0 +1,3943 @@
+/* UI layer (DOM). No ES modules so file:// works. */
+
+// Basic polyfills / diagnostics for mobile browsers
+if (!window.CSS) window.CSS = {};
+if (typeof window.CSS.escape !== "function") {
+  window.CSS.escape = function (value) {
+    // Minimal escape for use in attribute selectors.
+    return String(value).replace(/[^a-zA-Z0-9_\-]/g, "\\$&");
+  };
+}
+
+function showFatalError(err) {
+  try {
+    const msg = (err && (err.stack || err.message)) ? String(err.stack || err.message) : String(err);
+    const box = document.createElement("div");
+    box.style.position = "fixed";
+    box.style.inset = "12px";
+    box.style.zIndex = "20000";
+    box.style.background = "rgba(0,0,0,0.78)";
+    box.style.color = "white";
+    box.style.padding = "12px";
+    box.style.borderRadius = "14px";
+    box.style.overflow = "auto";
+    box.style.fontSize = "12px";
+    box.style.whiteSpace = "pre-wrap";
+    box.innerText = "页面发生错误（请截图发我）：\n\n" + msg;
+    box.addEventListener("click", () => box.remove());
+    document.body.appendChild(box);
+  } catch {
+    // ignore
+  }
+}
+
+window.addEventListener("error", (e) => showFatalError(e.error || e.message || e), { passive: true });
+window.addEventListener("unhandledrejection", (e) => showFatalError(e.reason || e), { passive: true });
+
+function $(sel) {
+  const el = document.querySelector(sel);
+  if (!el) throw new Error(`Missing element: ${sel}`);
+  return el;
+}
+
+function escapeHtml(s) {
+  return String(s)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function seatEls() {
+  return {
+    top: { name: $("#pTopName"), count: $("#pTopCount"), hand: $("#pTopHand") },
+    left: { name: $("#pLeftName"), count: $("#pLeftCount"), hand: $("#pLeftHand") },
+    right: { name: $("#pRightName"), count: $("#pRightCount"), hand: $("#pRightHand") },
+    bottom: { name: $("#pBottomName"), count: $("#pBottomCount"), hand: $("#pBottomHand") },
+  };
+}
+
+function renderSeats(game, opts = {}) {
+  const dealMode = !!opts.deal;
+  const animateExpand = !!opts.animateExpand; // new option: animate card repositioning
+  // Fixed mapping: 0 bottom(you), 1 right, 2 top, 3 left.
+  const map = seatEls();
+  const seatByIdx = {
+    0: map.bottom,
+    1: map.right,
+    2: map.top,
+    3: map.left,
+  };
+
+  for (let i = 0; i < game.players.length; i++) {
+    const p = game.players[i];
+    const s = seatByIdx[i];
+    if (!s) continue;
+    s.name.innerHTML = `${escapeHtml(p.name)} ${p.kind === "ai" ? "<span class=\"pill\">AI</span>" : "<span class=\"pill\">玩家</span>"}`;
+    s.count.textContent = p.out ? "已出完" : `手牌 ${p.hand.length}`;
+  }
+
+  // Render AI hands as backs only; human hand face-up.
+  for (let i = 0; i < game.players.length; i++) {
+    const p = game.players[i];
+    const s = seatByIdx[i];
+    s.hand.innerHTML = "";
+    if (i === 0) {
+      // You: show face-up cards (selectable on table)
+      const n = p.hand.length;
+      const center = (n - 1) / 2;
+      for (let idx = 0; idx < n; idx++) {
+        const card = p.hand[idx];
+        const div = document.createElement("div");
+        div.className = `faceCard ${card.type === "joker" ? "joker imgCard" : ""} ${card.type === "img" ? "imgCard" : ""}`;
+        div.dataset.cardId = card.id;
+        if (dealMode) div.dataset.dealIndex = String(idx);
+
+        // Fan layout (more readable: larger spacing between cards)
+        // Cap overall width to avoid spilling off the bottom plank.
+        const maxFanWidth = 920; // px (wider so text/images aren't covered)
+        const spread = Math.min(62, maxFanWidth / Math.max(1, n - 1));
+        const d = idx - center;
+        div.style.setProperty("--x", `${d * spread}px`);
+        div.style.setProperty("--rot", `${d * 0.9}deg`);
+        div.style.setProperty("--y", `${Math.abs(d) * 0.8}px`);
+        div.style.zIndex = String(100 + idx);
+
+        // Add expand animation class when joker is dealt
+        if (animateExpand) {
+          div.style.transition = "transform 300ms cubic-bezier(0.22, 1, 0.36, 1)";
+        }
+
+        if (card.type === "joker") {
+          div.dataset.corner = "";
+          div.innerHTML = `
+            <div class="cardContent">
+              <div class="imgWrap"><img class="cardImg" src="./assets/joker.png" alt="joker" draggable="false" /></div>
+            </div>
+          `;
+        } else {
+          div.dataset.corner = "";
+          div.innerHTML = `
+            <div class="cardContent">
+              <div class="imgWrap"><img class="cardImg" src="${escapeHtml(card.imgSrc)}" alt="card" draggable="false" /></div>
+            </div>
+          `;
+        }
+        s.hand.appendChild(div);
+      }
+    } else {
+      // AI: show backs only. If it's your turn and this AI is upstream, render full clickable backs.
+      const isHumanTurn = game.players[game.currentPlayerIndex].kind === "human";
+      const upstreamIdx = window.Game.getUpstreamPlayerIndex(game);
+      const isUpstreamForDraw = isHumanTurn && upstreamIdx === i && !game.turnHasDrawn;
+      // Render as a pile like the reference: top zone piles sideways, left/right piles vertical.
+      const showN = p.hand.length;
+      const cCenter = (showN - 1) / 2;
+      // Make the upstream pile clickable (tap pile -> open overlay).
+      if (isUpstreamForDraw) s.hand.dataset.fromPlayerIndex = String(i);
+      else s.hand.removeAttribute("data-from-player-index");
+
+      for (let k = 0; k < showN; k++) {
+        const b = document.createElement("div");
+        b.className = "miniBack";
+        if (dealMode) b.dataset.dealIndex = String(k);
+        b.textContent = "";
+        const d = k - cCenter;
+        let sx = 0;
+        let sy = 0;
+        let srot = 0;
+        if (i === 2) {
+          // top player: pile spreads to the left (as in reference)
+          sx = d * 12;
+          sy = d * 0.3;
+          srot = 0;
+        } else {
+          // left/right: pile spreads downward
+          sx = d * 0.3;
+          sy = d * 9;
+          // rotate 90° around each card's center for side players
+          srot = i === 1 || i === 3 ? 90 : 0;
+        }
+        b.style.setProperty("--sx", `${sx}px`);
+        b.style.setProperty("--sy", `${sy}px`);
+        b.style.setProperty("--srot", `${srot}deg`);
+        b.style.transitionDelay = `0ms`;
+        b.style.zIndex = String(10 + k);
+
+        // Add expand animation when joker is dealt
+        if (animateExpand) {
+          b.style.transition = "left 300ms cubic-bezier(0.22, 1, 0.36, 1), top 300ms cubic-bezier(0.22, 1, 0.36, 1)";
+        }
+
+        s.hand.appendChild(b);
+      }
+    }
+  }
+}
+
+function renderDiscardPile(game) {
+  const pile = $("#discardPile");
+  const count = $("#discardCount");
+  count.textContent = `共 ${game.discardPile.length} 张`;
+  pile.innerHTML = "";
+
+  // Two-pile discard: each discarded *pair* becomes (leftPileCard, rightPileCard).http://127.0.0.1:8000/english-old-maid/assets/animal_cards/4_2_A.png
+  // Next discard covers the previous (stacking), instead of spreading around.
+  function hash01(str) {
+    let h = 2166136261;
+    for (let i = 0; i < str.length; i++) {
+      h ^= str.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    return ((h >>> 0) % 10000) / 10000;
+  }
+  function rotJitter(cardId, idx) {
+    return (hash01(`${cardId}|${idx}`) - 0.5) * 8; // -4..4 deg
+  }
+
+  const pairs = [];
+  for (let i = 0; i < game.discardPile.length; i += 2) {
+    pairs.push([game.discardPile[i], game.discardPile[i + 1]]);
+  }
+  const leftPile = pairs.map((p) => p[0]).filter(Boolean);
+  const rightPile = pairs.map((p) => p[1]).filter(Boolean);
+
+  const MAX_DEPTH = 18; // render last N layers for perf; older still exist logically
+  const leftShown = leftPile.slice(-MAX_DEPTH);
+  const rightShown = rightPile.slice(-MAX_DEPTH);
+
+  function renderCardFaceUp(c, xPercent, yPercent, z) {
+    const div = document.createElement("div");
+    const isJoker = c.type === "joker";
+    div.className = `discardCard ${isJoker ? "joker" : "imgDiscard"}`;
+    div.style.left = `${xPercent}%`;
+    div.style.top = `${yPercent}%`;
+    div.style.transform = `translate(-50%, -50%) rotate(${rotJitter(c.id, z)}deg)`;
+    div.style.zIndex = String(z);
+
+    if (isJoker) {
+      div.dataset.corner = "";
+      div.innerHTML = `
+        <div class="imgWrap"><img class="cardImg" src="./assets/joker.png" alt="joker" draggable="false" /></div>
+      `;
+    } else {
+      div.dataset.corner = "";
+      div.innerHTML = `
+        <div class="imgWrap"><img class="cardImg" src="${escapeHtml(c.imgSrc)}" alt="card" draggable="false" /></div>
+      `;
+    }
+
+    pile.appendChild(div);
+  }
+
+  // Left pile center and right pile center inside the discard zone
+  const leftX = 28;
+  const rightX = 72;
+  const baseY = 52;
+
+  // Render bottom-to-top so newer cards cover older ones.
+  for (let i = 0; i < leftShown.length; i++) {
+    const c = leftShown[i];
+    renderCardFaceUp(c, leftX, baseY, 10 + i);
+  }
+  for (let i = 0; i < rightShown.length; i++) {
+    const c = rightShown[i];
+    renderCardFaceUp(c, rightX, baseY, 100 + i);
+  }
+}
+
+// no TTS in standard card mode
+
+function flyToDiscard(fromEl) {
+  const pile = $("#discardPile");
+  const from = fromEl.getBoundingClientRect();
+  const to = pile.getBoundingClientRect();
+  const ghost = fromEl.cloneNode(true);
+  ghost.classList.add("flyingCard");
+  ghost.style.left = `${from.left}px`;
+  ghost.style.top = `${from.top}px`;
+  ghost.style.width = `${from.width}px`;
+  ghost.style.height = `${from.height}px`;
+  document.body.appendChild(ghost);
+
+  // Determine target position based on card suffix (_A -> left, _B -> right)
+  const cardId = fromEl.dataset.cardId || "";
+  const isACard = cardId.includes("_A");
+  const isBCard = cardId.includes("_B");
+
+  // Calculate target position (matching renderDiscardPile positions)
+  // Left pile: 28% from left, Right pile: 72% from left
+  const leftX = 0.28;   // 28%
+  const rightX = 0.72;  // 72%
+  const targetXPercent = isACard ? leftX : (isBCard ? rightX : 0.5);
+
+  const targetX = to.left + to.width * targetXPercent;
+  const targetY = to.top + to.height * 0.52; // baseY = 52%
+
+  const dx = targetX - (from.left + from.width / 2);
+  const dy = targetY - (from.top + from.height / 2);
+
+  // Calculate scale to match discardCard size (92px base width)
+  const discardScale = getComputedStyle(document.documentElement).getPropertyValue('--scale-discard-pile') || "1";
+  const targetWidth = 92 * parseFloat(discardScale);
+  const scaleTarget = targetWidth / from.width;
+
+  // 计算目标旋转角度（与弃牌堆一致）
+  const currentDiscardLength = window.game ? window.game.discardPile.length : 0;
+  const targetZ = isACard ? (10 + Math.floor(currentDiscardLength / 2)) : (100 + Math.floor(currentDiscardLength / 2));
+
+  function hash01(str) {
+    let h = 2166136261;
+    for (let i = 0; i < str.length; i++) {
+      h ^= str.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    return ((h >>> 0) % 10000) / 10000;
+  }
+  const targetRotation = (hash01(`${cardId}|${targetZ}`) - 0.5) * 8; // -4..4 deg
+
+  // 使用物理动画（与 AI 配对动画一致）
+  const steps = 30;
+  const keyframes = [];
+  const dist = Math.sqrt(dx * dx + dy * dy);
+  const arcHeight = Math.min(80, dist * 0.2); // 玩家出牌弧度较低
+  const overshootDist = dist * 0.04; // 4% 过冲
+
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    let easeT, overshoot;
+
+    if (t <= 0.68) {
+      const t1 = t / 0.68;
+      easeT = 1 - Math.pow(1 - t1, 2.5);
+      overshoot = 1.04;
+    } else {
+      const t2 = (t - 0.68) / 0.32;
+      const easeT2 = t2 < 0.5 ? 4 * t2 * t2 * t2 : 1 - Math.pow(-2 * t2 + 2, 3) / 2;
+      easeT = 1.04 - 0.04 * easeT2;
+      overshoot = easeT;
+    }
+
+    const arcT = Math.min(easeT, 1.0);
+    const baseX = dx * arcT;
+    const baseY = dy * arcT;
+    const arcY = -arcHeight * 4 * arcT * (1 - arcT);
+
+    const dirLen = Math.sqrt(dx * dx + dy * dy);
+    const normX = dirLen > 0 ? dx / dirLen : 0;
+    const normY = dirLen > 0 ? dy / dirLen : 0;
+    const overshootAmount = (overshoot - 1.0) * overshootDist;
+
+    const x = baseX + normX * overshootAmount;
+    const y = baseY + arcY + normY * overshootAmount;
+
+    const currentScale = 1 + (scaleTarget - 1) * Math.min(easeT, 1.0);
+    const currentRotation = targetRotation * Math.min(easeT, 1.0);
+    const opacity = 1 - 0.05 * Math.min(easeT, 1.0);
+
+    keyframes.push({
+      transform: `translate(${x}px, ${y}px) scale(${currentScale}) rotate(${currentRotation}deg)`,
+      opacity: opacity,
+      offset: t
+    });
+  }
+
+  ghost.animate(keyframes, {
+    duration: 520,
+    easing: "linear"
+  }).onfinish = () => ghost.remove();
+}
+
+function seatHandElByPlayerIndex(idx) {
+  // Fixed mapping: 0 bottom(you), 1 right, 2 top, 3 left.
+  if (idx === 0) return $("#pBottomHand");
+  if (idx === 1) return $("#pRightHand");
+  if (idx === 2) return $("#pTopHand");
+  return $("#pLeftHand");
+}
+
+function flyFromRectToRect(fromRect, toRect, node, playerIndex, onComplete) {
+  // Handle both old (4 params) and new (5 params) signatures
+  if (typeof playerIndex === 'function') {
+    onComplete = playerIndex;
+    playerIndex = 0; // default to player
+  }
+  // Create 3D card wrapper with front and back faces
+  const wrapper = document.createElement("div");
+  wrapper.classList.add("flyingCard");
+  wrapper.style.left = `${fromRect.left}px`;
+  wrapper.style.top = `${fromRect.top}px`;
+  wrapper.style.width = `${fromRect.width}px`;
+  wrapper.style.height = `${fromRect.height}px`;
+  wrapper.style.transformStyle = "preserve-3d";
+  wrapper.style.position = "fixed";
+
+  // Front face (original joker card)
+  const front = node;
+  front.style.position = "absolute";
+  front.style.width = "100%";
+  front.style.height = "100%";
+  front.style.left = "0";
+  front.style.top = "0";
+  front.style.margin = "0";
+  front.style.padding = front.style.padding || "10px";
+  front.style.backfaceVisibility = "hidden";
+  front.style.WebkitBackfaceVisibility = "hidden";
+  front.style.transform = "rotateY(0deg)";
+  front.style.transformStyle = "preserve-3d";
+  front.style.zIndex = "2";
+
+  // Back face (card back)
+  const back = document.createElement("div");
+  back.style.position = "absolute";
+  back.style.width = "100%";
+  back.style.height = "100%";
+  back.style.left = "0";
+  back.style.top = "0";
+  back.style.backfaceVisibility = "hidden";
+  back.style.WebkitBackfaceVisibility = "hidden";
+  back.style.transform = "rotateY(180deg)";
+  back.style.transformStyle = "preserve-3d";
+  back.style.background = "#2b4a2d url('./assets/card-back.png') center/cover no-repeat"; // Combined for reliability
+  back.style.borderRadius = front.style.borderRadius || "18px";
+  back.style.border = "1px solid rgba(0,0,0,0.22)";
+  back.style.boxSizing = "border-box";
+  back.style.zIndex = "1";
+  back.textContent = ""; // Ensure no text content
+
+  wrapper.appendChild(front);
+  wrapper.appendChild(back);
+  document.body.appendChild(wrapper);
+
+  const ghost = wrapper;
+
+  const startX = fromRect.left + fromRect.width / 2;
+  const startY = fromRect.top + fromRect.height / 2;
+  const endX = toRect.left + toRect.width / 2;
+  const endY = toRect.top + toRect.height / 2;
+
+  // Calculate scale to match target card size
+  const targetScale = toRect.width / fromRect.width;
+
+  // Determine rotation and arc direction based on target player
+  let targetRotation = 0;
+  let controlX = (startX + endX) / 2;
+  let controlY = (startY + endY) / 2;
+  const arcDist = Math.min(200, Math.abs(endY - startY) * 0.6 + Math.abs(endX - startX) * 0.3);
+
+  if (playerIndex === 3) {
+    // Left AI: rotate 90deg, arc curves downward (opening upward)
+    targetRotation = 90;
+    controlY = controlY + arcDist; // Control point below midpoint = arc opens upward
+  } else if (playerIndex === 1) {
+    // Right AI: rotate -90deg, arc curves downward (opening upward)
+    targetRotation = -90;
+    controlY = controlY + arcDist; // Control point below midpoint = arc opens upward
+  } else if (playerIndex === 2) {
+    // Top AI: rotate -180deg, arc curves left (opening right)
+    targetRotation = -180;
+    controlX = controlX + arcDist; // Control point to the right = arc opens right
+  } else {
+    // Player (bottom): no rotation, arc upward (opening downward)
+    targetRotation = 0;
+    controlY = controlY - arcDist; // Control point above midpoint = arc opens downward
+  }
+
+  const keyframes = [];
+  const steps = 30;
+
+  // Calculate overshoot distance (similar to dealEnter: -14px overshoot)
+  const overshootRatio = 0.05; // 5% overshoot beyond target
+  const overshootDist = Math.sqrt(Math.pow(endX - startX, 2) + Math.pow(endY - startY, 2)) * overshootRatio;
+
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    let easeT, overshoot;
+
+    // Two-phase animation like dealEnter:
+    // Phase 1 (0% → 72%): Fast approach with overshoot (ease-out)
+    // Phase 2 (72% → 100%): Settle back (ease-in-out)
+    if (t <= 0.72) {
+      // Phase 1: ease-out (cubic-bezier(0.22, 1, 0.36, 1))
+      const t1 = t / 0.72;
+      easeT = 1 - Math.pow(1 - t1, 3); // approximation of ease-out
+      overshoot = 1.05; // 5% overshoot at end of phase 1
+    } else {
+      // Phase 2: ease-in-out back to target (cubic-bezier(0.65, 0, 0.35, 1))
+      const t2 = (t - 0.72) / 0.28;
+      const easeT2 = t2 < 0.5
+        ? 4 * t2 * t2 * t2
+        : 1 - Math.pow(-2 * t2 + 2, 3) / 2;
+      easeT = 1.05 - 0.05 * easeT2; // from 1.05 back to 1.0
+      overshoot = easeT;
+    }
+
+    // Apply overshoot to the trajectory
+    const baseX = (1-easeT)*(1-easeT)*startX + 2*(1-easeT)*easeT*controlX + easeT*easeT*endX;
+    const baseY = (1-easeT)*(1-easeT)*startY + 2*(1-easeT)*easeT*controlY + easeT*easeT*endY;
+
+    // Add overshoot in the direction of movement
+    const dirX = endX - startX;
+    const dirY = endY - startY;
+    const dirLen = Math.sqrt(dirX * dirX + dirY * dirY);
+    const normX = dirLen > 0 ? dirX / dirLen : 0;
+    const normY = dirLen > 0 ? dirY / dirLen : 0;
+
+    const overshootAmount = (overshoot - 1.0) * overshootDist;
+    const x = baseX + normX * overshootAmount;
+    const y = baseY + normY * overshootAmount;
+
+    // Scale smoothly from 1 to targetScale
+    const currentScale = 1 + (targetScale - 1) * Math.min(easeT, 1.0);
+    // Rotate smoothly to target rotation (Z-axis for final orientation)
+    const currentRotation = targetRotation * Math.min(easeT, 1.0);
+
+    // Y-axis flip (正面 -> 背面) only for AI players
+    const flipRotation = playerIndex === 0 ? 0 : Math.min(easeT, 1.0) * 180;
+
+    keyframes.push({
+      left: `${x}px`,
+      top: `${y}px`,
+      transform: `translate(-50%, -50%) scale(${currentScale}) rotate(${currentRotation}deg) rotateY(${flipRotation}deg)`,
+      opacity: 1 - 0.05 * Math.min(easeT, 1.0)
+    });
+  }
+
+  ghost.animate(keyframes, {
+    duration: 560, // Match dealEnter duration
+    easing: "linear" // easing already baked into keyframes
+  }).onfinish = () => {
+    ghost.remove();
+    if (onComplete) onComplete();
+  };
+}
+
+// Animate card draw with flying card (source -> target player hand)
+// If drawing from human player (index 0), show face card; otherwise show back
+function animateDrawCardFly(fromPlayerIdx, toPlayerIdx, drawnCard, onComplete) {
+  try {
+    const fromHandEl = seatHandElByPlayerIndex(fromPlayerIdx);
+    const toHandEl = seatHandElByPlayerIndex(toPlayerIdx);
+    if (!fromHandEl || !toHandEl) {
+      if (onComplete) onComplete();
+      return;
+    }
+
+    const fromRect = fromHandEl.getBoundingClientRect();
+    const toRect = toHandEl.getBoundingClientRect();
+
+    // Create flying card (face-up if from human player, back otherwise)
+    const flyingCard = document.createElement("div");
+    const showFace = fromPlayerIdx === 0; // human player is index 0
+
+    if (showFace && drawnCard) {
+      // Show face card
+      flyingCard.className = `faceCard ${drawnCard.type === "joker" ? "joker imgCard" : ""} ${drawnCard.type === "img" ? "imgCard" : ""}`;
+      flyingCard.style.width = "86px";
+      flyingCard.style.height = "124px";
+
+      if (drawnCard.type === "joker") {
+        flyingCard.dataset.corner = "";
+        flyingCard.innerHTML = `
+          <div class="cardContent">
+            <div class="imgWrap"><img class="cardImg" src="./assets/joker.png" alt="joker" draggable="false" /></div>
+          </div>
+        `;
+      } else {
+        flyingCard.dataset.corner = "";
+        flyingCard.innerHTML = `
+          <div class="cardContent">
+            <div class="imgWrap"><img class="cardImg" src="${escapeHtml(drawnCard.imgSrc)}" alt="card" draggable="false" /></div>
+          </div>
+        `;
+      }
+    } else {
+      // Show back card
+      flyingCard.className = "miniBack";
+      flyingCard.style.width = "92px";
+      flyingCard.style.height = "132px";
+    }
+
+    flyingCard.style.position = "fixed";
+    const cardWidth = showFace ? 86 : 92;
+    const cardHeight = showFace ? 124 : 132;
+    flyingCard.style.left = `${fromRect.left + fromRect.width / 2 - cardWidth / 2}px`;
+    flyingCard.style.top = `${fromRect.top + fromRect.height / 2 - cardHeight / 2}px`;
+    flyingCard.style.zIndex = "10005";
+    flyingCard.style.pointerEvents = "none";
+    flyingCard.style.transform = "none";
+    document.body.appendChild(flyingCard);
+
+    const dx = toRect.left + toRect.width / 2 - (fromRect.left + fromRect.width / 2);
+    const dy = toRect.top + toRect.height / 2 - (fromRect.top + fromRect.height / 2);
+
+    const anim = flyingCard.animate(
+      [
+        { transform: "translate(0px, 0px) scale(1)", opacity: 1 },
+        { transform: `translate(${dx}px, ${dy}px) scale(0.75)`, opacity: 0.95 }
+      ],
+      { duration: 520, easing: "cubic-bezier(.2,.9,.2,1)" }
+    );
+
+    anim.onfinish = () => {
+      flyingCard.remove();
+      if (onComplete) onComplete();
+    };
+  } catch (e) {
+    console.error("animateDrawCardFly error:", e);
+    if (onComplete) onComplete();
+  }
+}
+
+// Animate AI discard pair: show two face-up cards flying from AI hand to discard pile
+// Uses physics-based arc trajectory with overshoot and settle-back
+function animateAiDiscardPair(playerIdx, card1, card2, onComplete) {
+  console.log(`[AI出牌动画] AI${playerIdx} 开始配对出牌动画, card1:`, card1, "card2:", card2);
+  try {
+    const fromHandEl = seatHandElByPlayerIndex(playerIdx);
+    const discardPile = document.getElementById("discardPile");
+    console.log(`[AI出牌动画] fromHandEl:`, fromHandEl, "discardPile:", discardPile);
+    if (!fromHandEl || !discardPile) {
+      console.log(`[AI出牌动画] 元素未找到，跳过动画`);
+      if (onComplete) onComplete();
+      return;
+    }
+
+    const fromRect = fromHandEl.getBoundingClientRect();
+    const toRect = discardPile.getBoundingClientRect();
+    console.log(`[AI出牌动画] fromRect:`, fromRect, "toRect:", toRect);
+
+    // Sort cards: _A to left pile, _B to right pile
+    let leftCard, rightCard;
+    if (card1.imgSrc && card1.imgSrc.includes("_A.")) {
+      leftCard = card1;
+      rightCard = card2;
+    } else if (card2.imgSrc && card2.imgSrc.includes("_A.")) {
+      leftCard = card2;
+      rightCard = card1;
+    } else {
+      // Fallback if no clear A/B suffix
+      leftCard = card1;
+      rightCard = card2;
+    }
+
+    const cards = [leftCard, rightCard];
+    let completed = 0;
+
+    // Calculate rotation angle using same hash function as renderDiscardPile
+    function hash01(str) {
+      let h = 2166136261;
+      for (let i = 0; i < str.length; i++) {
+        h ^= str.charCodeAt(i);
+        h = Math.imul(h, 16777619);
+      }
+      return ((h >>> 0) % 10000) / 10000;
+    }
+    function rotJitter(cardId, idx) {
+      return (hash01(`${cardId}|${idx}`) - 0.5) * 8; // -4..4 deg
+    }
+
+    // Calculate z-index for each card (matching renderDiscardPile logic)
+    const currentDiscardLength = window.game ? window.game.discardPile.length : 0;
+    const leftZ = 10 + Math.floor(currentDiscardLength / 2);
+    const rightZ = 100 + Math.floor(currentDiscardLength / 2);
+
+    cards.forEach((card, index) => {
+      // 创建翻转容器（双面卡牌）
+      const flipContainer = document.createElement("div");
+      flipContainer.style.width = "86px";
+      flipContainer.style.height = "124px";
+      flipContainer.style.position = "fixed";
+      flipContainer.style.transformStyle = "preserve-3d";
+      flipContainer.style.perspective = "1000px";
+
+      const cardWidth = 86;
+      const cardHeight = 124;
+
+      // Staggered start position: left card slightly earlier/left, right card slightly later/right
+      const startOffsetX = (index - 0.5) * 40; // wider separation
+      const startOffsetY = index * -8; // slight vertical offset
+
+      flipContainer.style.left = `${fromRect.left + fromRect.width / 2 - cardWidth / 2 + startOffsetX}px`;
+      flipContainer.style.top = `${fromRect.top + fromRect.height / 2 - cardHeight / 2 + startOffsetY}px`;
+      flipContainer.style.zIndex = "100"; // 低层级，不遮挡UI
+      flipContainer.style.pointerEvents = "none";
+
+      // 背面牌
+      const backCard = document.createElement("div");
+      backCard.className = "miniBack";
+      backCard.style.width = "86px";
+      backCard.style.height = "124px";
+      backCard.style.position = "absolute";
+      backCard.style.backfaceVisibility = "hidden";
+      backCard.style.transform = "rotateY(0deg)";
+
+      // 正面牌
+      const frontCard = document.createElement("div");
+      frontCard.className = `faceCard ${card.type === "img" ? "imgCard" : ""}`;
+      frontCard.style.width = "86px";
+      frontCard.style.height = "124px";
+      frontCard.style.position = "absolute";
+      frontCard.style.backfaceVisibility = "hidden";
+      frontCard.style.transform = "rotateY(180deg)";
+      if (card.type === "img") {
+        frontCard.innerHTML = `
+          <div class="cardContent">
+            <div class="imgWrap"><img class="cardImg" src="${escapeHtml(card.imgSrc)}" alt="card" draggable="false" /></div>
+          </div>
+        `;
+      }
+
+      flipContainer.appendChild(backCard);
+      flipContainer.appendChild(frontCard);
+      document.body.appendChild(flipContainer);
+
+      // Target position: left pile (28%) or right pile (72%)
+      const targetXPercent = index === 0 ? 0.28 : 0.72;
+      const targetX = toRect.left + toRect.width * targetXPercent;
+      const targetY = toRect.top + toRect.height * 0.52;
+
+      const startX = fromRect.left + fromRect.width / 2 + startOffsetX;
+      const startY = fromRect.top + fromRect.height / 2 + startOffsetY;
+
+      const discardScale = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--scale-discard-pile') || "1");
+      const targetWidth = 86 * discardScale;
+      const scaleTarget = targetWidth / 86;
+
+      const zIndex = index === 0 ? leftZ : rightZ;
+      const targetRotation = rotJitter(card.id, zIndex);
+
+      // Physics-based animation with arc trajectory and overshoot
+      // Phase 1 (0% → 68%): Fast approach with arc (ease-out)
+      // Phase 2 (68% → 100%): Settle back with slight overshoot (ease-in-out)
+      const steps = 40;
+      const keyframes = [];
+
+      // Calculate arc trajectory (parabola)
+      const dx = targetX - startX;
+      const dy = targetY - startY;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+
+      // Arc height proportional to distance (higher arc for longer throws)
+      const arcHeight = Math.min(120, dist * 0.25); // peak height of arc
+
+      // Overshoot distance (5% of total distance)
+      const overshootDist = dist * 0.05;
+
+      for (let i = 0; i <= steps; i++) {
+        const t = i / steps;
+        let easeT, overshoot;
+
+        // Two-phase easing like dealEnter
+        if (t <= 0.68) {
+          // Phase 1: Fast approach with ease-out
+          const t1 = t / 0.68;
+          easeT = 1 - Math.pow(1 - t1, 2.5); // ease-out (slower at end)
+          overshoot = 1.05; // 5% overshoot at end of phase 1
+        } else {
+          // Phase 2: Settle back with ease-in-out
+          const t2 = (t - 0.68) / 0.32;
+          const easeT2 = t2 < 0.5
+            ? 4 * t2 * t2 * t2
+            : 1 - Math.pow(-2 * t2 + 2, 3) / 2;
+          easeT = 1.05 - 0.05 * easeT2; // from 1.05 back to 1.0
+          overshoot = easeT;
+        }
+
+        // Quadratic arc trajectory (parabola)
+        // At t=0: (0, 0), t=0.5: (dx/2, -arcHeight), t=1: (dx, 0)
+        const arcT = Math.min(easeT, 1.0);
+        const baseX = dx * arcT;
+        const baseY = dy * arcT;
+
+        // Parabolic Y offset (arc curve)
+        const arcY = -arcHeight * 4 * arcT * (1 - arcT); // parabola peaks at t=0.5
+
+        // Apply overshoot in direction of movement
+        const dirLen = Math.sqrt(dx * dx + dy * dy);
+        const normX = dirLen > 0 ? dx / dirLen : 0;
+        const normY = dirLen > 0 ? dy / dirLen : 0;
+        const overshootAmount = (overshoot - 1.0) * overshootDist;
+
+        const x = baseX + normX * overshootAmount;
+        const y = baseY + arcY + normY * overshootAmount;
+
+        // Scale smoothly from 1 to targetScale
+        const currentScale = 1 + (scaleTarget - 1) * Math.min(easeT, 1.0);
+
+        // Y-axis flip (背面 -> 正面): 0deg -> 180deg
+        const flipRotation = Math.min(easeT, 1.0) * 180;
+
+        // Z-axis tumbling rotation (adds realism)
+        // Rotate faster during flight, slow down when landing
+        const tumbleSpeed = 360 * (1 - Math.min(easeT, 1.0)); // slows down from 360 to 0
+        const tumbleRotation = targetRotation + tumbleSpeed * arcT;
+
+        // Opacity fade in/out slightly
+        const opacity = 1 - 0.05 * Math.min(easeT, 1.0);
+
+        keyframes.push({
+          transform: `translate(${x}px, ${y}px) rotateY(${flipRotation}deg) scale(${currentScale}) rotate(${tumbleRotation}deg)`,
+          opacity: opacity,
+          offset: t
+        });
+      }
+
+      // Animate with baked-in easing
+      const anim = flipContainer.animate(keyframes, {
+        duration: 680, // slightly faster than before
+        easing: "linear" // easing already baked into keyframes
+      });
+
+      anim.onfinish = () => {
+        flipContainer.remove();
+        completed++;
+        if (completed === cards.length && onComplete) {
+          onComplete();
+        }
+      };
+    });
+  } catch (e) {
+    console.error("animateAiDiscardPair error:", e);
+    if (onComplete) onComplete();
+  }
+}
+
+// Animate Joker draw: from source -> center reveal -> target hand
+function animateJokerDrawReveal(fromPlayerIdx, toPlayerIdx, onComplete) {
+  try {
+    const fromHandEl = seatHandElByPlayerIndex(fromPlayerIdx);
+    const toHandEl = seatHandElByPlayerIndex(toPlayerIdx);
+    if (!fromHandEl || !toHandEl) {
+      if (onComplete) onComplete();
+      return;
+    }
+
+    const fromRect = fromHandEl.getBoundingClientRect();
+    const toRect = toHandEl.getBoundingClientRect();
+
+    // Create flying Joker card
+    const flyingCard = document.createElement("div");
+    flyingCard.className = "faceCard joker";
+    flyingCard.style.width = "86px";
+    flyingCard.style.height = "124px";
+    flyingCard.style.position = "fixed";
+    flyingCard.style.left = `${fromRect.left + fromRect.width / 2 - 43}px`;
+    flyingCard.style.top = `${fromRect.top + fromRect.height / 2 - 62}px`;
+    flyingCard.style.zIndex = "10010";
+    flyingCard.style.pointerEvents = "none";
+    flyingCard.style.transform = "none";
+    flyingCard.dataset.corner = "JOKER";
+    flyingCard.innerHTML = `
+      <div class="cardContent">
+        <div class="primaryText">JOKER</div>
+        <div></div>
+        <div class="secondaryText"></div>
+      </div>
+    `;
+    document.body.appendChild(flyingCard);
+
+    // Calculate positions
+    const startX = fromRect.left + fromRect.width / 2;
+    const startY = fromRect.top + fromRect.height / 2;
+    const centerX = window.innerWidth / 2;
+    const centerY = window.innerHeight / 2;
+    const endX = toRect.left + toRect.width / 2;
+    const endY = toRect.top + toRect.height / 2;
+
+    // Step 1: Arc from source to center with overshoot
+    const arcDist1 = Math.min(150, Math.abs(centerY - startY) * 0.5);
+    const controlX1 = (startX + centerX) / 2;
+    const controlY1 = (startY + centerY) / 2 - arcDist1; // Arc upward
+
+    const keyframes1 = [];
+    const steps1 = 30;
+    for (let i = 0; i <= steps1; i++) {
+      const t = i / steps1;
+      let easeT;
+
+      // Two-phase: gentle start with overshoot, then settle
+      if (t <= 0.75) {
+        const t1 = t / 0.75;
+        // Quadratic ease-out for gentler start
+        easeT = 1 - Math.pow(1 - t1, 2);
+      } else {
+        const t2 = (t - 0.75) / 0.25;
+        easeT = 1.0 + 0.03 * (1 - t2); // smaller overshoot
+      }
+
+      const x = (1-easeT)*(1-easeT)*startX + 2*(1-easeT)*easeT*controlX1 + easeT*easeT*centerX;
+      const y = (1-easeT)*(1-easeT)*startY + 2*(1-easeT)*easeT*controlY1 + easeT*easeT*centerY;
+      const scale = 1 + 0.35 * Math.min(easeT, 1.0);
+
+      keyframes1.push({
+        left: `${x - 43}px`,
+        top: `${y - 62}px`,
+        transform: `scale(${scale})`,
+        opacity: 1
+      });
+    }
+
+    const anim1 = flyingCard.animate(keyframes1, {
+      duration: 680,
+      easing: "linear"
+    });
+
+    anim1.onfinish = () => {
+      // Show name text
+      const nameText = document.createElement("div");
+      nameText.style.position = "fixed";
+      nameText.style.left = "50%";
+      nameText.style.top = `${centerY + 100}px`;
+      nameText.style.transform = "translateX(-50%)";
+      nameText.style.zIndex = "10011";
+      nameText.style.fontSize = "18px";
+      nameText.style.fontWeight = "900";
+      nameText.style.color = "rgba(255,255,255,0.92)";
+      nameText.style.textShadow = "0 2px 12px rgba(0,0,0,0.55)";
+      nameText.style.pointerEvents = "none";
+      nameText.textContent = `王八牌 → ${game?.players?.[toPlayerIdx]?.name || ""}`;
+      document.body.appendChild(nameText);
+
+      // Step 2: Arc from center to target with overshoot
+      setTimeout(() => {
+        nameText.remove();
+
+        const arcDist2 = Math.min(150, Math.abs(endY - centerY) * 0.5);
+        const controlX2 = (centerX + endX) / 2;
+        const controlY2 = (centerY + endY) / 2 - arcDist2; // Arc upward
+
+        const keyframes2 = [];
+        const steps2 = 25;
+        const overshootRatio = 0.05;
+        const totalDist = Math.sqrt(Math.pow(endX - centerX, 2) + Math.pow(endY - centerY, 2));
+        const overshootDist = totalDist * overshootRatio;
+
+        for (let i = 0; i <= steps2; i++) {
+          const t = i / steps2;
+          let easeT, overshoot;
+
+          if (t <= 0.72) {
+            const t1 = t / 0.72;
+            easeT = 1 - Math.pow(1 - t1, 3);
+            overshoot = 1.05;
+          } else {
+            const t2 = (t - 0.72) / 0.28;
+            const easeT2 = t2 < 0.5 ? 4 * t2 * t2 * t2 : 1 - Math.pow(-2 * t2 + 2, 3) / 2;
+            easeT = 1.05 - 0.05 * easeT2;
+            overshoot = easeT;
+          }
+
+          const baseX = (1-easeT)*(1-easeT)*centerX + 2*(1-easeT)*easeT*controlX2 + easeT*easeT*endX;
+          const baseY = (1-easeT)*(1-easeT)*centerY + 2*(1-easeT)*easeT*controlY2 + easeT*easeT*endY;
+
+          const dirX = endX - centerX;
+          const dirY = endY - centerY;
+          const dirLen = Math.sqrt(dirX * dirX + dirY * dirY);
+          const normX = dirLen > 0 ? dirX / dirLen : 0;
+          const normY = dirLen > 0 ? dirY / dirLen : 0;
+
+          const overshootAmount = (overshoot - 1.0) * overshootDist;
+          const x = baseX + normX * overshootAmount;
+          const y = baseY + normY * overshootAmount;
+
+          const scale = 1.35 - 0.6 * Math.min(easeT, 1.0);
+
+          keyframes2.push({
+            left: `${x - 43}px`,
+            top: `${y - 62}px`,
+            transform: `scale(${scale})`,
+            opacity: 1 - 0.05 * Math.min(easeT, 1.0)
+          });
+        }
+
+        const anim2 = flyingCard.animate(keyframes2, {
+          duration: 560,
+          easing: "linear"
+        });
+
+        anim2.onfinish = () => {
+          flyingCard.remove();
+          if (onComplete) onComplete();
+        };
+      }, 640);
+    };
+  } catch (e) {
+    console.error("animateJokerDrawReveal error:", e);
+    if (onComplete) onComplete();
+  }
+}
+
+// 简洁的飞行函数：从.tableBg中心飞向玩家手牌，90度时替换图片
+function flyJokerToPlayerSimple(game, playerIndex, onComplete) {
+  try {
+    const handEl = seatHandElByPlayerIndex(playerIndex);
+    const player = game.players[playerIndex];
+    const numCards = player ? player.hand.length + 1 : 1;
+
+    // 获取目标卡牌尺寸
+    let cardWidth, cardHeight;
+    if (playerIndex === 0) {
+      const s = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--scale-player-card')) || 1;
+      cardWidth = 86 * s;
+      cardHeight = 124 * s;
+    } else if (playerIndex === 2) {
+      const s = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--scale-ai-top-card')) || 1;
+      cardWidth = 52 * s;
+      cardHeight = 72 * s;
+    } else {
+      const s = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--scale-ai-side-card')) || 1;
+      cardWidth = 64 * s;
+      cardHeight = 89 * s;
+    }
+
+    // 计算目标位置
+    const handRect = handEl.getBoundingClientRect();
+    let targetX, targetY;
+    if (playerIndex === 0) {
+      const center = (numCards - 1) / 2;
+      const spread = Math.min(62, 920 / Math.max(1, numCards - 1));
+      const d = numCards - 1 - center;
+      targetX = handRect.left + handRect.width / 2 + d * spread;
+      targetY = handRect.top + 18 + cardHeight / 2 + Math.abs(d) * 0.8;
+    } else {
+      const center = (numCards - 1) / 2;
+      const d = numCards - 1 - center;
+      if (playerIndex === 2) {
+        targetX = handRect.left + handRect.width / 2 + d * 12;
+        targetY = handRect.top + handRect.height / 2 + d * 0.3;
+      } else {
+        targetX = handRect.left + handRect.width / 2 + d * 0.3;
+        targetY = handRect.top + handRect.height / 2 + d * 9;
+      }
+    }
+
+    // 获取.tableBg中心作为起点
+    const tableBg = document.querySelector('.tableBg');
+    const tbr = tableBg ? tableBg.getBoundingClientRect() : { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight };
+    const startX = tbr.left + tbr.width / 2;
+    const startY = tbr.top + tbr.height / 2;
+
+    // 创建飞行卡牌
+    const card = document.createElement('div');
+    card.style.cssText = `position:fixed;left:${startX-43}px;top:${startY-62}px;width:86px;height:124px;z-index:10060;border:1px solid rgba(0,0,0,0.22);border-radius:16px;overflow:hidden;background:white;`;
+    card.innerHTML = `<img id="jImg" style="width:100%;height:100%;object-fit:contain" src="./assets/joker.png">`;
+    document.body.appendChild(card);
+
+    const img = card.querySelector('#jImg');
+    const targetScale = cardWidth / 86;
+    let rotZ = 0;
+    if (playerIndex === 1) rotZ = -90;
+    else if (playerIndex === 2) rotZ = 180;
+    else if (playerIndex === 3) rotZ = 90;
+
+    const dist = Math.sqrt((targetX - startX) ** 2 + (targetY - startY) ** 2);
+    const arc = Math.min(200, dist * 0.4);
+    const cx = (startX + targetX) / 2;
+    let cy = (startY + targetY) / 2;
+    if (playerIndex === 0) cy -= arc;
+    else if (playerIndex === 2) cy -= arc * 0.5;
+    else cy += arc * 0.3;
+
+    const kf = [];
+    for (let i = 0; i <= 30; i++) {
+      const t = i / 30;
+      const et = 1 - (1 - t) ** 3;
+      const x = (1 - et) ** 2 * startX + 2 * (1 - et) * et * cx + et ** 2 * targetX;
+      const y = (1 - et) ** 2 * startY + 2 * (1 - et) * et * cy + et ** 2 * targetY;
+      const sc = 1 + (targetScale - 1) * et;
+      const rz = rotZ * et;
+      let ry = 0;
+      if (playerIndex !== 0 && et > 0.30) {
+        ry = ((et - 0.30) / 0.70) * 180;
+      }
+      kf.push({ left: `${x - 43}px`, top: `${y - 62}px`, transform: `scale(${sc}) rotateZ(${rz}deg) rotateY(${ry}deg)`, opacity: 1 });
+    }
+
+    const an = card.animate(kf, { duration: 560, easing: 'linear', fill: 'forwards' });
+
+    // AI: 90度时替换图片
+    if (playerIndex !== 0 && img) {
+      let flipped = false;
+      const check = () => {
+        if (flipped || an.playState === 'finished') return;
+        const ct = an.currentTime || 0;
+        const p = ct / 560;
+        const et = 1 - (1 - p) ** 3;
+        let ry = 0;
+        if (et > 0.30) ry = ((et - 0.30) / 0.70) * 180;
+        if (ry >= 90) {
+          flipped = true;
+          img.src = './assets/card-back.png';
+          card.style.background = '#2b4a2d';
+        } else {
+          requestAnimationFrame(check);
+        }
+      };
+      requestAnimationFrame(check);
+    }
+
+    an.onfinish = () => {
+      card.remove();
+      if (onComplete) onComplete();
+    };
+  } catch (e) {
+    console.error('flyJokerToPlayerSimple error:', e);
+    if (onComplete) onComplete();
+  }
+}
+
+function showJokerRevealAndFly(game, playerIndex, onComplete) {
+  // 🎨 使用粒子凝聚特效（如果可用）
+  if (window.JokerSummon && typeof window.JokerSummon.createSummonEffect === 'function') {
+    const summonEffect = window.JokerSummon.createSummonEffect({
+      jokerImageUrl: './assets/joker.png',
+      duration: 1.8,
+      onComplete: () => {
+        summonEffect.destroy(); // 黑屏瞬间消失
+        flyJokerToPlayerSimple(game, playerIndex, onComplete); // 立即开始飞行
+      }
+    });
+    setTimeout(() => summonEffect.play(), 100);
+    return;
+  }
+
+  // Fallback: 原始动画
+  const prev = document.querySelector(".jokerRevealOverlay");
+  if (prev) prev.remove();
+
+  const name = game?.players?.[playerIndex]?.name || "";
+  const wrap = document.createElement("div");
+  wrap.className = "jokerRevealOverlay";
+  wrap.innerHTML = `
+    <div class="jokerRevealInner">
+      <div class="revealStage">
+        <div class="revealCard joker" data-corner="JOKER">
+          <div class="primaryText">JOKER</div>
+          <div></div>
+          <div class="secondaryText"></div>
+        </div>
+      </div>
+      <div class="revealTo">王八牌 → ${escapeHtml(name)}</div>
+    </div>
+  `;
+  document.body.appendChild(wrap);
+
+  const revealEl = wrap.querySelector(".revealCard");
+  if (!revealEl) {
+    wrap.remove();
+    if (onComplete) onComplete();
+    return;
+  }
+
+  window.clearTimeout(showJokerRevealAndFly._t);
+  showJokerRevealAndFly._t = window.setTimeout(() => {
+    try {
+      const from = revealEl.getBoundingClientRect();
+      const handEl = seatHandElByPlayerIndex(playerIndex);
+      const handRect = handEl.getBoundingClientRect();
+
+      // Calculate target position: rightmost card position AFTER joker is added
+      const player = game.players[playerIndex];
+      const numCards = player ? player.hand.length + 1 : 1; // +1 for joker being added
+      let targetX, targetY;
+
+      // Get actual card size first (needed for position calculation)
+      let cardWidth, cardHeight;
+      if (playerIndex === 0) {
+        const scalePlayer = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--scale-player-card')) || 1;
+        cardWidth = 86 * scalePlayer;
+        cardHeight = 124 * scalePlayer;
+      } else if (playerIndex === 2) {
+        const scaleTop = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--scale-ai-top-card')) || 1;
+        cardWidth = 52 * scaleTop;
+        cardHeight = 72 * scaleTop;
+      } else {
+        const scaleSide = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--scale-ai-side-card')) || 1;
+        cardWidth = 64 * scaleSide;
+        cardHeight = 89 * scaleSide;
+      }
+
+      if (playerIndex === 0) {
+        // Bottom player: calculate rightmost card position in fan layout (AFTER joker added)
+        const center = (numCards - 1) / 2;
+        const maxFanWidth = 920;
+        const spread = Math.min(62, maxFanWidth / Math.max(1, numCards - 1));
+        const rightmostIdx = numCards - 1;
+        const rightmostD = rightmostIdx - center;
+        // faceCard positioning: left: 50%, top: 18px, transform: translateX(-50%) translateX(var(--x)) translateY(var(--y))
+        // So actual center X = handRect.left + handRect.width/2 + --x
+        // Actual center Y = handRect.top + 18 + cardHeight/2 + --y
+        const xOffset = rightmostD * spread;
+        const yOffset = Math.abs(rightmostD) * 0.8;
+        targetX = handRect.left + handRect.width / 2 + xOffset;
+        targetY = handRect.top + 18 + cardHeight / 2 + yOffset;
+      } else {
+        // AI players: calculate tail position in their pile (AFTER joker added)
+        const center = (numCards - 1) / 2;
+        const tailIdx = numCards - 1;
+        const tailD = tailIdx - center;
+
+        if (playerIndex === 2) {
+          // Top player: pile spreads left, tail is at left side (positive sx)
+          const tailSx = tailD * 12;
+          const tailSy = tailD * 0.3;
+          targetX = handRect.left + handRect.width / 2 + tailSx;
+          targetY = handRect.top + handRect.height / 2 + tailSy;
+        } else {
+          // Left/right players: pile spreads downward, tail is at bottom
+          const tailSx = tailD * 0.3;
+          const tailSy = tailD * 9;
+          targetX = handRect.left + handRect.width / 2 + tailSx;
+          targetY = handRect.top + handRect.height / 2 + tailSy;
+        }
+      }
+
+      // Build target rect: targetX/targetY are CENTER positions
+      // Convert to left/top (top-left corner) for the to object
+      const to = {
+        left: targetX - cardWidth / 2,
+        top: targetY - cardHeight / 2,
+        width: cardWidth,
+        height: cardHeight
+      };
+
+      console.log(`[Joker] Player ${playerIndex}, numCards: ${numCards}, targetX: ${targetX}, targetY: ${targetY}, cardWidth: ${cardWidth}`);
+
+      const ghost = revealEl.cloneNode(true);
+      flyFromRectToRect(from, to, ghost, playerIndex, onComplete);
+    } catch {
+      // ignore
+      if (onComplete) onComplete();
+    } finally {
+      wrap.remove();
+    }
+  }, 720);
+}
+
+function showDrawRevealAndFly(game, drawnCard, playerIndex) {
+  const msg = $("#message");
+  msg.classList.add("revealOnly");
+
+  if (drawnCard.type === "joker") {
+    const name = game?.players?.[playerIndex]?.name || "";
+    msg.innerHTML = `
+      <div class="revealStage">
+        <div class="revealCard joker imgCard" data-corner="">
+          <div class="imgWrap"><img class="cardImg" src="./assets/joker.png" alt="joker" /></div>
+        </div>
+      </div>
+      <div class="revealTo">王八牌 → ${escapeHtml(name)}</div>
+    `;
+  } else {
+    msg.innerHTML = `
+      <div class="revealStage">
+        <div class="revealCard" data-corner="">
+          <div class="imgWrap"><img class="cardImg" src="${escapeHtml(drawnCard.imgSrc)}" alt="card" /></div>
+        </div>
+      </div>
+    `;
+  }
+
+  const revealEl = msg.querySelector(".revealCard");
+  if (!revealEl) return;
+  // no suit coloring in image mode
+
+  // Fly to the drawer's hand area after a short reveal.
+  window.clearTimeout(showDrawRevealAndFly._t);
+  showDrawRevealAndFly._t = window.setTimeout(() => {
+    try {
+      const from = revealEl.getBoundingClientRect();
+      const handEl = seatHandElByPlayerIndex(playerIndex);
+      const to = handEl.getBoundingClientRect();
+      const ghost = revealEl.cloneNode(true);
+      flyFromRectToRect(from, to, ghost);
+    } catch {
+      // ignore
+    } finally {
+      // Clear reveal after animation start
+      msg.innerHTML = "";
+      msg.classList.remove("revealOnly");
+    }
+  }, 650);
+}
+
+function renderAction(game, settings) {
+  const choiceRow = $("#choiceRow");
+  const btnTryMatch = $("#btnTryMatch");
+  const btnClearSelect = $("#btnClearSelect");
+  const btnEndTurn = $("#btnEndTurn");
+
+  if (game.gameOver) {
+    choiceRow.classList.add("hidden");
+    btnEndTurn.disabled = true;
+    return;
+  }
+
+  const current = game.players[game.currentPlayerIndex];
+  const targetIdx = window.Game.getUpstreamPlayerIndex(game);
+
+  // Choice UI
+  const isHumanTurn = current.kind === "human";
+  choiceRow.classList.toggle("hidden", !isHumanTurn);
+  btnTryMatch.disabled = true;
+  btnClearSelect.disabled = true;
+
+  // End turn gating: must draw once before ending
+  const canDrawUpstream = window.Game.canDrawFrom(game, targetIdx);
+  // 规则：通常需要先抽牌再结束；但如果上家没牌可抽，则允许直接结束避免卡死
+  btnEndTurn.disabled = !isHumanTurn || (!game.turnHasDrawn && canDrawUpstream);
+}
+
+function showLastEvent(game, settings) {
+  const msg = $("#message");
+  const ev = game.lastEvent;
+  if (!ev) {
+    msg.innerHTML = "";
+    msg.classList.remove("revealOnly");
+    return;
+  }
+
+  if (ev.type === "joker_deal") {
+    // 发牌结束后：王八牌亮相（屏幕居中），然后飞到指定玩家手牌
+    msg.innerHTML = "";
+    msg.classList.remove("revealOnly");
+    showJokerRevealAndFly(game, Math.max(0, ev.playerIndex || 0));
+  } else if (ev.type === "draw") {
+    // Draw animations are now handled inline during the draw action (with flying card)
+    // Only clear the message area here
+    msg.innerHTML = "";
+    msg.classList.remove("revealOnly");
+  } else if (ev.type === "discard_pair") {
+    // no text / no TTS
+  } else if (ev.type === "mismatch") {
+    // No text提示
+    msg.innerHTML = "";
+  } else {
+    msg.innerHTML = "";
+  }
+}
+
+function renderAll(game, settings) {
+  renderSeats(game);
+  renderDiscardPile(game);
+  renderAction(game, settings);
+  showLastEvent(game, settings);
+}
+
+function runAiLoop(game, settings) {
+  if (!game || game.gameOver) return;
+  const current = game.players[game.currentPlayerIndex];
+  if (!current) return;
+  // If somehow we landed on an "out" player, immediately advance until we reach an active one.
+  if (current.out) {
+    window.Game.advanceTurn(game);
+    renderAll(game, settings);
+    return runAiLoop(game, settings);
+  }
+  if (current.kind !== "ai") return;
+
+  // 玩家出局后加速AI对局
+  const humanPlayer = game.players.find(p => p.kind === "human");
+  const speedUpAi = humanPlayer && humanPlayer.out;
+  const basePace = speedUpAi ? 200 : settings.aiPaceMs;
+
+  // 🆕 回合开始时先检查是否有配对，如果有则先出牌再抽牌
+  const initialPair = window.Game.findAnyPairInHand(current.hand);
+  if (initialPair && !game.turnHasDrawn) {
+    console.log(`[AI回合开始] AI${game.currentPlayerIndex} 发现初始配对，先出牌`);
+
+    // 延迟后开始出牌（给AI一个"思考"的时间）
+    const initialThinkingDelay = speedUpAi ? 400 : (600 + Math.random() * 400);
+
+    window.clearTimeout(runAiLoop._t);
+    runAiLoop._t = window.setTimeout(() => {
+      // 递归出牌直到没有配对
+      const discardAllInitialPairs = () => {
+        const pair = window.Game.findAnyPairInHand(current.hand);
+        if (!pair) {
+          // 没有配对了，继续正常抽牌流程
+          console.log(`[AI回合开始] AI${game.currentPlayerIndex} 配对完成，开始抽牌`);
+          proceedToDrawPhase();
+          return;
+        }
+
+        // 出牌动画
+        const aiIdx = game.currentPlayerIndex;
+        animateAiDiscardPair(aiIdx, pair[0], pair[1], () => {
+          window.Game.tryDiscardPairByCardIds(game, aiIdx, pair[0].id, pair[1].id);
+          renderAll(game, settings);
+
+          // 检查是否出局
+          if (current.out || game.gameOver) {
+            window.Game.advanceTurn(game);
+            renderAll(game, settings);
+            runAiLoop(game, settings);
+            return;
+          }
+
+          // 等待后继续出下一对
+          const thinkingDelay = speedUpAi ? 300 : (800 + Math.random() * 400);
+          window.setTimeout(discardAllInitialPairs, thinkingDelay);
+        });
+      };
+
+      discardAllInitialPairs();
+    }, initialThinkingDelay);
+    return;
+  }
+
+  // 正常抽牌流程
+  function proceedToDrawPhase() {
+    // AI：从上家抽一张（使用智能抽牌逻辑）
+    const targetIdx = window.Game.getUpstreamPlayerIndex(game);
+    const target = game.players[targetIdx];
+    if (!target || target.out || target.hand.length === 0) {
+      window.Game.advanceTurn(game);
+      renderAll(game, settings);
+      return runAiLoop(game, settings);
+    }
+
+    // 计算AI抽牌延迟（根据手牌数量增加紧张感）
+    const aiDrawDelay = speedUpAi ? 200 : window.Game.getAiDrawDelay(game, game.currentPlayerIndex);
+
+    window.clearTimeout(runAiLoop._t);
+    runAiLoop._t = window.setTimeout(() => {
+      try {
+        // 使用智能抽牌索引（第三把会优先抽JOKER）
+        const idx = window.Game.getAiDrawIndex(game, game.currentPlayerIndex, targetIdx);
+        const drawnCard = target.hand[idx];
+        const isJoker = drawnCard && drawnCard.type === "joker";
+        const currentIdx = game.currentPlayerIndex;
+
+        if (isJoker) {
+          // Joker: fly to center, reveal, then to AI hand
+          animateJokerDrawReveal(targetIdx, currentIdx, () => {
+            // After animation, execute the draw
+            window.Game.drawCard(game, targetIdx, idx);
+            renderAll(game, settings);
+
+            // Continue AI turn: discard pairs with animation
+            continueAiTurnAfterDraw();
+          });
+        } else {
+          // Normal card: fly directly to AI hand
+          animateDrawCardFly(targetIdx, currentIdx, drawnCard, () => {
+            // After animation, execute the draw
+            window.Game.drawCard(game, targetIdx, idx);
+            renderAll(game, settings);
+
+            // Continue AI turn: discard pairs with animation
+            continueAiTurnAfterDraw();
+          });
+        }
+
+        function continueAiTurnAfterDraw() {
+          window.setTimeout(() => {
+            try {
+              // AI auto-discard all pairs it can find (with animations)
+              const discardNextPair = () => {
+                if (game.gameOver) {
+                  // Game ended, just run next loop
+                  renderAll(game, settings);
+                  runAiLoop(game, settings);
+                  return;
+                }
+
+                const currentPlayer = game.players[game.currentPlayerIndex];
+                const pair = window.Game.findAnyPairInHand(currentPlayer.hand);
+                if (!pair) {
+                  // No more pairs, advance turn
+                  if (!game.gameOver) window.Game.advanceTurn(game);
+                  renderAll(game, settings);
+                  runAiLoop(game, settings);
+                  return;
+                }
+
+                // Animate discard, then execute and continue
+                const aiIdx = game.currentPlayerIndex;
+                animateAiDiscardPair(aiIdx, pair[0], pair[1], () => {
+                  window.Game.tryDiscardPairByCardIds(
+                    game,
+                    aiIdx,
+                    pair[0].id,
+                    pair[1].id
+                  );
+                  renderAll(game, settings);
+
+                  // Wait a bit before next pair (800-1200ms random to simulate human thinking)
+                  const thinkingDelay = 800 + Math.random() * 400;
+                  window.setTimeout(discardNextPair, thinkingDelay);
+                });
+              };
+
+              discardNextPair();
+            } catch {
+              // ignore
+            }
+          }, isJoker ? Math.max(basePace, 1200) : basePace);
+        }
+      } catch {
+        // ignore
+      }
+    }, aiDrawDelay); // 使用动态计算的延迟时间
+  }
+
+  // 如果没有初始配对，直接进入抽牌阶段
+  proceedToDrawPhase();
+}
+
+function initUi(imagePairs = []) {
+  const settings = {
+    showBothOnDraw: true,
+    autoAdvanceMs: 0,
+    aiPaceMs: 650,
+  };
+
+  const autoNextToggle = $("#autoNextToggle");
+  const pairCountInput = $("#pairCount");
+  const pairCountNum = $("#pairCountNum");
+  const pairCountLabel = $("#pairCountLabel");
+  const totalCardLabel = $("#totalCardLabel");
+  const btnStart = $("#btnStart");
+  const btnRestart = $("#btnRestart");
+  const btnTryMatch = $("#btnTryMatch");
+  const btnClearSelect = $("#btnClearSelect");
+  const btnEndTurn = $("#btnEndTurn");
+  const btnHintImg = $("#btnHintImg");
+  const btnMatchImg = $("#btnMatchImg");
+  const btnEndTurnImg = $("#btnEndTurnImg");
+  const endOverlay = $("#endOverlay");
+  const endTitle = $("#endTitle");
+  const endSubtitle = $("#endSubtitle");
+  const btnPlayAgain = $("#btnPlayAgain");
+  const btnBackToSetup = $("#btnBackToSetup");
+  const btnTune = $("#btnTune");
+  const tunerPanel = $("#tunerPanel");
+  const btnTuneClose = $("#btnTuneClose");
+  const btnTuneReset = $("#btnTuneReset");
+  const btnTuneImport = $("#btnTuneImport");
+  const btnTuneCopy = $("#btnTuneCopy");
+  const tunerControls = $("#tunerControls");
+  const drawOverlay = $("#drawOverlay");
+  const drawRow = $("#drawRow");
+  const btnDrawClose = $("#btnDrawClose");
+  const drawOverlayInner = drawOverlay.querySelector(".drawOverlayInner");
+  const drawScroll = $("#drawScroll");
+  const drawThumb = $("#drawThumb");
+  // Hook for scrollbar recalculation (assigned in the scroll-sync IIFE below).
+  let recalcDrawScrollSoon = null;
+  // Draw overlay scrollbar: thumb appears as full bar then shrinks along the card "spread" timeline.
+  let drawThumbAnimRaf = null;
+  let drawThumbFinalWPercent = 100;
+  let upstreamOpenAnimating = false;
+  let suppressDrawOverlayGhost = false; // avoid double-transition when we already animated the upstream pile
+
+  let game = null;
+  let selected = [];
+  let lastHumanActionAt = 0;
+  let hintT = null;
+  let lastTurnPlayerId = null;
+  let isDealing = false;
+  let suppressHandClickUntil = 0;
+
+  function advancePastOutPlayers() {
+    if (!game || game.gameOver) return;
+    // If the current player is out, immediately advance until reaching an active one.
+    let guard = 0;
+    while (!game.gameOver && game.players[game.currentPlayerIndex]?.out && guard++ < 10) {
+      window.Game.advanceTurn(game);
+    }
+  }
+
+  const HINT_MS = 3000;
+  const LAYOUT_KEY = "oldmaid_layout_v1";
+
+  const DEFAULT_LAYOUT = {
+    top: { left: 32.8, top: -2.8, width: 34.5, height: 8 },
+    left: { left: -2.2, top: 37.2, width: 15, height: 8 },
+    right: { left: 74.1, top: 37.2, width: 41, height: 8 },
+    bottom: { left: 19.7, top: 61.6, width: 62, height: 25 },
+    center: { left: 30.5, top: 22.2, width: 40, height: 20 },
+    buttons: {
+      hint: { x: 0, y: 14 },
+      match: { x: 3, y: 14 },
+      endturn: { x: 6, y: 14 },
+    },
+    scales: {
+      playerCard: 0.85,
+      aiTopCard: 1.29,
+      aiSideCard: 1.25,
+      uiButtons: 0.84,
+      discardPile: 0.82,
+    },
+  };
+
+  function getZones() {
+    return {
+      top: document.querySelector(".zone-top"),
+      left: document.querySelector(".zone-left"),
+      right: document.querySelector(".zone-right"),
+      bottom: document.querySelector(".zone-bottom"),
+      center: document.querySelector(".zone-center"),
+    };
+  }
+
+  function clamp(n, min, max) {
+    return Math.max(min, Math.min(max, n));
+  }
+
+  function clampToStep(n, min, max, step) {
+    const clamped = clamp(n, min, max);
+    const stepped = Math.round(clamped / step) * step;
+    // Avoid floating point noise for 0.5 steps etc.
+    return Number(stepped.toFixed(3));
+  }
+
+  function parseMaybeDecimal(raw) {
+    if (raw == null) return NaN;
+    const s = String(raw).trim().replace(",", ".");
+    // Keep only first valid numeric token
+    const m = s.match(/-?\d+(\.\d+)?/);
+    return m ? Number(m[0]) : NaN;
+  }
+
+  function loadLayout() {
+    try {
+      const raw = localStorage.getItem(LAYOUT_KEY);
+      const clone = (o) => JSON.parse(JSON.stringify(o));
+      if (!raw) return clone(DEFAULT_LAYOUT);
+      const parsed = JSON.parse(raw);
+      // Deep-merge for buttons and cardSizes
+      const merged = { ...clone(DEFAULT_LAYOUT), ...parsed };
+      merged.buttons = { ...clone(DEFAULT_LAYOUT).buttons, ...(parsed.buttons || {}) };
+      merged.buttons.hint = { x: 0, y: 0, ...(merged.buttons.hint || {}) };
+      merged.buttons.match = { x: 0, y: 0, ...(merged.buttons.match || {}) };
+      merged.buttons.endturn = { x: 0, y: 0, ...(merged.buttons.endturn || {}) };
+      merged.scales = { ...clone(DEFAULT_LAYOUT).scales, ...(parsed.scales || {}) };
+      return merged;
+    } catch {
+      return JSON.parse(JSON.stringify(DEFAULT_LAYOUT));
+    }
+  }
+
+  function saveLayout(layout) {
+    try {
+      localStorage.setItem(LAYOUT_KEY, JSON.stringify(layout));
+    } catch {
+      // ignore
+    }
+  }
+
+  function applyLayout(layout) {
+    const zones = getZones();
+    for (const key of Object.keys(zones)) {
+      const el = zones[key];
+      const v = layout[key];
+      if (!el || !v) continue;
+      const left = clamp(Number(v.left), -10, 95);
+      const top = clamp(Number(v.top), -10, 95);
+      const width = clamp(Number(v.width), 8, 95);
+      const height = clamp(Number(v.height), 8, 80);
+      el.style.left = `${left}%`;
+      el.style.top = `${top}%`;
+      el.style.width = `${width}%`;
+      el.style.height = `${height}%`;
+    }
+
+    // Button offsets
+    const btns = layout.buttons || {};
+    const applyBtn = (el, cfg) => {
+      if (!el || !cfg) return;
+      const x = clamp(Number(cfg.x), -260, 260);
+      const y = clamp(Number(cfg.y), -180, 180);
+      el.style.setProperty("--btnX", `${x}px`);
+      el.style.setProperty("--btnY", `${y}px`);
+    };
+    applyBtn(btnHintImg, btns.hint);
+    applyBtn(btnMatchImg, btns.match);
+    applyBtn(btnEndTurnImg, btns.endturn);
+
+    // Apply scales
+    const scales = layout.scales || {};
+    document.documentElement.style.setProperty("--scale-player-card", String(clamp(scales.playerCard || 1.0, 0.5, 2.0)));
+    document.documentElement.style.setProperty("--scale-ai-top-card", String(clamp(scales.aiTopCard || 1.0, 0.5, 2.0)));
+    document.documentElement.style.setProperty("--scale-ai-side-card", String(clamp(scales.aiSideCard || 1.0, 0.5, 2.0)));
+    document.documentElement.style.setProperty("--scale-ui-buttons", String(clamp(scales.uiButtons || 1.0, 0.5, 2.0)));
+    document.documentElement.style.setProperty("--scale-discard-pile", String(clamp(scales.discardPile || 1.0, 0.5, 2.0)));
+  }
+
+  function buildTunerUI(layout) {
+    tunerControls.innerHTML = "";
+    const groups = [
+      ["top", "上方AI"],
+      ["left", "左侧AI"],
+      ["right", "右侧AI"],
+      ["bottom", "玩家手牌"],
+      ["center", "弃牌堆"],
+    ];
+
+    function addSlider(groupKey, prop, min, max, step) {
+      const row = document.createElement("div");
+      row.className = "tunerRow";
+
+      const lab = document.createElement("label");
+      lab.textContent = `${prop}(%)`;
+
+      const input = document.createElement("input");
+      input.type = "range";
+      input.min = String(min);
+      input.max = String(max);
+      input.step = String(step);
+      input.value = String(layout[groupKey][prop]);
+
+      const num = document.createElement("input");
+      // Use text input for better decimal keyboard support on mobile (number often hides '.')
+      num.type = "text";
+      num.className = "tunerNum";
+      num.min = String(min);
+      num.max = String(max);
+      num.step = String(step);
+      num.value = String(layout[groupKey][prop]);
+      num.inputMode = "decimal";
+      num.autocomplete = "off";
+      num.spellcheck = false;
+
+      const applyFromRange = () => {
+        const n0 = parseMaybeDecimal(input.value);
+        if (Number.isNaN(n0)) return;
+        const n = clampToStep(n0, min, max, step);
+        layout[groupKey][prop] = n;
+        input.value = String(n);
+        // Keep number box in sync when slider is used
+        num.value = String(n);
+        applyLayout(layout);
+        saveLayout(layout);
+      };
+
+      const applyFromTextLive = () => {
+        // While typing, don't rewrite the text box (so "1." / "-"/ "." can be typed).
+        const n0 = parseMaybeDecimal(num.value);
+        if (Number.isNaN(n0)) return;
+        const n = clamp(n0, min, max);
+        layout[groupKey][prop] = n;
+        input.value = String(n); // range will snap to its step
+        applyLayout(layout);
+        saveLayout(layout);
+      };
+
+      const applyFromTextCommit = () => {
+        const n0 = parseMaybeDecimal(num.value);
+        if (Number.isNaN(n0)) return;
+        const n = clampToStep(n0, min, max, step);
+        layout[groupKey][prop] = n;
+        input.value = String(n);
+        num.value = String(n); // normalize on commit
+        applyLayout(layout);
+        saveLayout(layout);
+      };
+
+      input.addEventListener("input", applyFromRange);
+      num.addEventListener("input", applyFromTextLive);
+      num.addEventListener("change", applyFromTextCommit);
+
+      row.appendChild(lab);
+      row.appendChild(input);
+      row.appendChild(num);
+      return row;
+    }
+
+    function addPxSlider(buttonKey, prop, min, max, step) {
+      const row = document.createElement("div");
+      row.className = "tunerRow";
+
+      const lab = document.createElement("label");
+      lab.textContent = `${prop.toUpperCase()}(px)`;
+
+      const input = document.createElement("input");
+      input.type = "range";
+      input.min = String(min);
+      input.max = String(max);
+      input.step = String(step);
+      input.value = String(layout.buttons[buttonKey][prop]);
+
+      const num = document.createElement("input");
+      // Use text input for consistent keyboard and allow '.' / ',' on mobile
+      num.type = "text";
+      num.className = "tunerNum";
+      num.min = String(min);
+      num.max = String(max);
+      num.step = String(step);
+      num.value = String(layout.buttons[buttonKey][prop]);
+      num.inputMode = "decimal";
+      num.autocomplete = "off";
+      num.spellcheck = false;
+
+      const applyFromRange = () => {
+        const n0 = parseMaybeDecimal(input.value);
+        if (Number.isNaN(n0)) return;
+        const n = clampToStep(n0, min, max, step);
+        layout.buttons[buttonKey][prop] = n;
+        input.value = String(n);
+        num.value = String(n);
+        applyLayout(layout);
+        saveLayout(layout);
+      };
+
+      const applyFromTextLive = () => {
+        const n0 = parseMaybeDecimal(num.value);
+        if (Number.isNaN(n0)) return;
+        const n = clamp(n0, min, max);
+        layout.buttons[buttonKey][prop] = n;
+        input.value = String(n);
+        applyLayout(layout);
+        saveLayout(layout);
+      };
+
+      const applyFromTextCommit = () => {
+        const n0 = parseMaybeDecimal(num.value);
+        if (Number.isNaN(n0)) return;
+        const n = clampToStep(n0, min, max, step);
+        layout.buttons[buttonKey][prop] = n;
+        input.value = String(n);
+        num.value = String(n);
+        applyLayout(layout);
+        saveLayout(layout);
+      };
+
+      input.addEventListener("input", applyFromRange);
+      num.addEventListener("input", applyFromTextLive);
+      num.addEventListener("change", applyFromTextCommit);
+
+      row.appendChild(lab);
+      row.appendChild(input);
+      row.appendChild(num);
+      return row;
+    }
+
+    for (const [key, title] of groups) {
+      const g = document.createElement("div");
+      g.className = "tunerGroup";
+      const t = document.createElement("div");
+      t.className = "tunerGroupTitle";
+      t.textContent = title;
+      g.appendChild(t);
+
+      // Use finer steps so decimal tuning doesn't "snap back" on blur/close.
+      g.appendChild(addSlider(key, "left", -10, 95, 0.1));
+      g.appendChild(addSlider(key, "top", -10, 95, 0.1));
+      g.appendChild(addSlider(key, "width", 8, 95, 0.1));
+      g.appendChild(addSlider(key, "height", 8, 80, 0.1));
+      tunerControls.appendChild(g);
+    }
+
+    // Button controls
+    const btnGroup = document.createElement("div");
+    btnGroup.className = "tunerGroup";
+    const bt = document.createElement("div");
+    bt.className = "tunerGroupTitle";
+    bt.textContent = "按钮位移（像素）";
+    btnGroup.appendChild(bt);
+
+    const mkSub = (name) => {
+      const t = document.createElement("div");
+      t.style.marginTop = "8px";
+      t.style.fontWeight = "900";
+      t.style.fontSize = "12px";
+      t.style.opacity = "0.9";
+      t.textContent = name;
+      return t;
+    };
+
+    btnGroup.appendChild(mkSub("提示"));
+    btnGroup.appendChild(addPxSlider("hint", "x", -260, 260, 1));
+    btnGroup.appendChild(addPxSlider("hint", "y", -180, 180, 1));
+
+    btnGroup.appendChild(mkSub("匹配出牌"));
+    btnGroup.appendChild(addPxSlider("match", "x", -260, 260, 1));
+    btnGroup.appendChild(addPxSlider("match", "y", -180, 180, 1));
+
+    btnGroup.appendChild(mkSub("结束回合"));
+    btnGroup.appendChild(addPxSlider("endturn", "x", -260, 260, 1));
+    btnGroup.appendChild(addPxSlider("endturn", "y", -180, 180, 1));
+
+    tunerControls.appendChild(btnGroup);
+
+    // Scales group
+    const scaleGroup = document.createElement("div");
+    scaleGroup.className = "tunerGroup";
+    const scaleTitle = document.createElement("div");
+    scaleTitle.className = "tunerGroupTitle";
+    scaleTitle.textContent = "卡牌与按钮缩放";
+    scaleGroup.appendChild(scaleTitle);
+
+    function addScaleSlider(scaleKey, label) {
+      const row = document.createElement("div");
+      row.className = "tunerRow";
+
+      const lab = document.createElement("label");
+      lab.textContent = label;
+
+      const input = document.createElement("input");
+      input.type = "range";
+      input.min = "0.5";
+      input.max = "2.0";
+      input.step = "0.01";
+      input.value = String(layout.scales[scaleKey]);
+
+      const num = document.createElement("input");
+      num.type = "text";
+      num.className = "tunerNum";
+      num.value = String(layout.scales[scaleKey]);
+      num.inputMode = "decimal";
+
+      const apply = () => {
+        const n0 = parseMaybeDecimal(input.value);
+        if (Number.isNaN(n0)) return;
+        const n = clampToStep(n0, 0.5, 2.0, 0.01);
+        layout.scales[scaleKey] = n;
+        input.value = String(n);
+        num.value = String(n);
+        applyLayout(layout);
+        saveLayout(layout);
+      };
+
+      input.addEventListener("input", apply);
+      num.addEventListener("input", () => {
+        const n0 = parseMaybeDecimal(num.value);
+        if (Number.isNaN(n0)) return;
+        const n = clamp(n0, 0.5, 2.0);
+        layout.scales[scaleKey] = n;
+        input.value = String(n);
+        applyLayout(layout);
+        saveLayout(layout);
+      });
+      num.addEventListener("change", apply);
+
+      row.appendChild(lab);
+      row.appendChild(input);
+      row.appendChild(num);
+      return row;
+    }
+
+    scaleGroup.appendChild(addScaleSlider("playerCard", "玩家手牌"));
+    scaleGroup.appendChild(addScaleSlider("aiTopCard", "AI上家"));
+    scaleGroup.appendChild(addScaleSlider("aiSideCard", "AI左右"));
+    scaleGroup.appendChild(addScaleSlider("discardPile", "弃牌堆"));
+    scaleGroup.appendChild(addScaleSlider("uiButtons", "UI按钮"));
+
+    tunerControls.appendChild(scaleGroup);
+  }
+
+  // Init layout tuning
+  let layout = loadLayout();
+  applyLayout(layout);
+  buildTunerUI(layout);
+
+  function updateTuneButtonState() {
+    const gameEl = $("#game");
+    btnTune.disabled = gameEl.classList.contains("hidden");
+    if (btnTune.disabled) tunerPanel.classList.add("hidden");
+  }
+  updateTuneButtonState();
+
+  function clearHintHighlight() {
+    const cards = Array.from($("#pBottomHand").querySelectorAll(".faceCard"));
+    for (const el of cards) {
+      el.classList.remove("hintPulse");
+      el.classList.remove("hintPulseAuto");
+    }
+  }
+
+  function maybeShowHint(isAuto = false) {
+    if (!game || game.gameOver) return;
+    const current = game.players[game.currentPlayerIndex];
+    if (!current || current.kind !== "human") return;
+
+    const pair = window.Game.findAnyPairInHand(game.players[0].hand);
+    if (!pair) return;
+
+    const a = pair[0].id;
+    const b = pair[1].id;
+
+    if (isAuto) {
+      // 自动提示：只显示呼吸缩放动画，不选中
+      const aEl = $("#pBottomHand").querySelector(
+        `.faceCard[data-card-id="${CSS.escape(a)}"]`
+      );
+      const bEl = $("#pBottomHand").querySelector(
+        `.faceCard[data-card-id="${CSS.escape(b)}"]`
+      );
+      for (const el of [aEl, bEl]) {
+        if (!el) continue;
+        el.classList.add("hintPulseAuto");
+      }
+    } else {
+      // 手动提示：自动选中两张牌（弹出效果）
+      selected = [a, b];
+      renderSelectionHighlights();
+      syncSelectionUi();
+    }
+  }
+
+  function scheduleHintFromNow() {
+    if (hintT) return; // already scheduled for current inactivity window
+    if (!game || game.gameOver) return;
+    const current = game.players[game.currentPlayerIndex];
+    if (!current || current.kind !== "human") return;
+    if (!window.Game.findAnyPairInHand(game.players[0].hand)) return;
+
+    const stamp = lastHumanActionAt;
+    hintT = window.setTimeout(() => {
+      // If user acted since scheduling, do nothing.
+      if (lastHumanActionAt !== stamp) return;
+      maybeShowHint(true); // 自动提示标记为 true
+    }, HINT_MS);
+  }
+
+  function markHumanAction() {
+    lastHumanActionAt = Date.now();
+    clearHintHighlight();
+    window.clearTimeout(hintT);
+    hintT = null;
+    scheduleHintFromNow();
+  }
+
+  // Ensure slider max matches available pairs, and clamp current value.
+  if (Array.isArray(imagePairs) && imagePairs.length > 0) {
+    pairCountInput.max = String(imagePairs.length);
+    pairCountNum.max = String(imagePairs.length);
+    if (Number(pairCountInput.value) > imagePairs.length) {
+      pairCountInput.value = String(imagePairs.length);
+      pairCountNum.value = String(imagePairs.length);
+    }
+  }
+
+  function syncSettings() {
+    settings.autoAdvanceMs = 0; // no longer used for turn flow
+    settings.aiPaceMs = autoNextToggle.checked ? 650 : 9999999;
+
+    const pc = Number(pairCountInput.value);
+    pairCountNum.value = String(pc);
+    pairCountLabel.textContent = String(pc);
+    // image mode: 2 cards per pair + 1 joker
+    totalCardLabel.textContent = String(pc * 2 + 1);
+  }
+
+  function pickPairs(n) {
+    const arr = imagePairs.slice();
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr.slice(0, Math.max(1, Math.min(n, arr.length)));
+  }
+
+  function startNewGame() {
+    syncSettings();
+    const pairCount = Number(pairCountInput.value);
+    const pickedPairs = pickPairs(pairCount);
+    game = window.Game.createGame({
+      pairs: pickedPairs,
+      playerCount: 4,
+      seed: String(Date.now()),
+    });
+    $("#setup").classList.add("hidden");
+    $("#game").classList.remove("hidden");
+    endOverlay.classList.add("hidden");
+    updateTuneButtonState();
+    selected = [];
+    // Deal animation: render seats, then slide cards in from bottom with delays (no opacity changes).
+    isDealing = true;
+    renderSeats(game, { deal: true });
+    renderDiscardPile(game);
+    renderAction(game, settings);
+    showLastEvent(game, settings);
+
+    const allFace = Array.from(document.querySelectorAll("#pBottomHand .faceCard"));
+    const aiBacks = Array.from(document.querySelectorAll(".seatHand .miniBack"));
+    // Init state (AI uses simple fade-in; human uses composited transform animation)
+    for (const el of aiBacks) el.classList.add("dealInit");
+
+    // Compute delays: player cards left->right (idx asc).
+    const base = 18;
+    const stepHuman = 22;
+    for (const el of allFace) {
+      const idx = Number(el.dataset.dealIndex || 0);
+      el.style.animationDelay = `${base + idx * stepHuman}ms`;
+    }
+    // AI: simple stagger per seat
+    const stepAi = 18;
+    for (const el of aiBacks) {
+      const idx = Number(el.dataset.dealIndex || 0);
+      el.style.transitionDelay = `${base + 80 + idx * stepAi}ms`;
+    }
+
+    // Trigger in next frame
+    window.requestAnimationFrame(() => {
+      for (const el of allFace) el.classList.add("dealAnim");
+      for (const el of aiBacks) el.classList.add("dealIn");
+    });
+
+    // 计算最后一张玩家手牌动画完成的时间（不包括清理缓冲）
+    const lastCardCompleteMs = base + (allFace.length - 1) * stepHuman + 420;
+    // 完整的清理时间（包括缓冲）
+    const totalMs = base + allFace.length * stepHuman + 420 + 120;
+
+    // 定义处理函数
+    function handleJokerThenPairs() {
+      if (game?.jokerPending) {
+        // 先发JOKER
+        const toIdx = Math.floor(Math.random() * game.players.length);
+        game.lastEvent = null;
+
+        renderSeats(game);
+        renderDiscardPile(game);
+        renderAction(game, settings);
+
+        showJokerRevealAndFly(game, toIdx, () => {
+          window.Game.dealPendingJokerToPlayer(game, toIdx);
+          game.lastEvent = null;
+          renderSeats(game, { animateExpand: true });
+          renderDiscardPile(game);
+          renderAction(game, settings);
+
+          // JOKER发牌完成后，等待1.5秒，然后开始所有玩家的配对动画
+          console.log("[JOKER发牌完成] 等待1.5秒后开始配对...");
+          setTimeout(() => {
+            startInitialPairingAnimation();
+          }, 1500);
+        });
+      } else {
+        // 没有JOKER，直接开始配对
+        startInitialPairingAnimation();
+      }
+    }
+
+    function startInitialPairingAnimation() {
+      // 🆕 第一步：在移除配对之前，先保存所有AI手牌的位置
+      console.log("[开始配对] 步骤1：保存所有AI手牌位置...");
+      const handPositions = {};
+      for (let pi = 1; pi < game.players.length; pi++) {
+        const handEl = seatHandElByPlayerIndex(pi);
+        if (handEl) {
+          handPositions[pi] = handEl.getBoundingClientRect();
+          console.log(`[配对动画] AI${pi} 原始位置:`, handPositions[pi]);
+        }
+      }
+
+      // 第二步：收集所有玩家的初始配对，按AI分组
+      console.log("[开始配对] 步骤2：收集并移除配对牌...");
+      const pairsByPlayer = {}; // { playerIdx: [{card1, card2}, ...] }
+
+      for (let pi = 1; pi < game.players.length; pi++) {
+        const player = game.players[pi];
+        if (player && !player.out) {
+          const removed = window.Game.discardAllPairsInPlace(player.hand);
+          if (removed.length > 0) {
+            game.discardPile.push(...removed);
+            player.out = player.hand.length === 0;
+            const name = pi === 0 ? "玩家" : `AI${pi}`;
+            console.log(`[发牌结束] ${name} 自动出掉 ${removed.length / 2} 对牌`);
+
+            // 按玩家分组记录配对信息
+            pairsByPlayer[pi] = [];
+            for (let i = 0; i < removed.length; i += 2) {
+              pairsByPlayer[pi].push({
+                card1: removed[i],
+                card2: removed[i + 1]
+              });
+            }
+          }
+        }
+      }
+
+      // 按AI顺序播放配对动画
+      const playerIndices = Object.keys(pairsByPlayer).map(Number).sort((a, b) => a - b);
+
+      if (playerIndices.length > 0) {
+        console.log(`[发牌结束] 将按AI顺序播放配对动画`);
+
+        // ⚠️ 不要先更新UI！需要先获取原始手牌位置，动画完成后再更新
+        // renderSeats(game);
+        // renderDiscardPile(game);
+
+        let totalAnimsCompleted = 0;
+        let totalAnimsExpected = 0;
+        playerIndices.forEach(pi => {
+          totalAnimsExpected += pairsByPlayer[pi].length * 2;
+        });
+
+        // 递归播放每个AI的配对
+        let currentPlayerIdx = 0;
+        let accumulatedDelay = 0;
+
+        function playNextPlayer() {
+          if (currentPlayerIdx >= playerIndices.length) {
+            // 所有AI配对完成
+            console.log("[发牌结束] 所有配对动画完成，等待后刷新UI");
+            setTimeout(() => {
+              renderSeats(game);
+              renderDiscardPile(game);
+              proceedAfterInitialPairs();
+            }, 300);
+            return;
+          }
+
+          const pi = playerIndices[currentPlayerIdx];
+          const pairs = pairsByPlayer[pi];
+          const aiName = `AI${pi}`;
+
+          // AI思考延迟：500-800ms随机
+          const thinkDelay = 500 + Math.random() * 300;
+          console.log(`[配对动画] ${aiName} 思考中... (${Math.round(thinkDelay)}ms)`);
+
+          setTimeout(() => {
+            console.log(`[配对动画] ${aiName} 开始出牌 (${pairs.length}对)`);
+
+            // 📍 使用之前保存的原始位置
+            const originalFromRect = handPositions[pi];
+            if (!originalFromRect) {
+              currentPlayerIdx++;
+              playNextPlayer();
+              return;
+            }
+
+            // 立即更新手牌显示（该AI手牌已空，其他AI保持原样）
+            renderSeats(game);
+            // ⚠️ 不要调用 renderDiscardPile，否则会重复显示卡牌
+
+            // 递归播放该AI的每一对牌
+            let pairIdx = 0;
+
+            function playNextPair() {
+              if (pairIdx >= pairs.length) {
+                // 该AI的所有配对完成，进入下一个AI
+                currentPlayerIdx++;
+                playNextPlayer();
+                return;
+              }
+
+              const pair = pairs[pairIdx];
+              // 使用之前保存的原始位置
+              const fromRect = originalFromRect;
+              const discardEl = document.getElementById("discardPile");
+              const toRect = discardEl.getBoundingClientRect();
+
+              // 为每张牌创建飞行动画（显示正面）
+              let pairAnimsCompleted = 0;
+              [pair.card1, pair.card2].forEach((card, cardIdx) => {
+                const flyingCard = document.createElement("div");
+                // 使用正面卡牌样式
+                const isJoker = card.type === "joker";
+                flyingCard.className = `faceCard ${isJoker ? "joker imgCard" : "imgCard"}`;
+                flyingCard.style.width = "92px";
+                flyingCard.style.height = "132px";
+                flyingCard.style.position = "fixed";
+
+                // 起始位置：略微错开
+                const cardWidth = 92;
+                const cardHeight = 132;
+                const offsetX = (cardIdx - 0.5) * 30;
+                flyingCard.style.left = `${fromRect.left + fromRect.width / 2 - cardWidth / 2 + offsetX}px`;
+                flyingCard.style.top = `${fromRect.top + fromRect.height / 2 - cardHeight / 2}px`;
+                flyingCard.style.zIndex = "100";
+                flyingCard.style.pointerEvents = "none";
+
+                // 添加卡牌内容（正面）
+                if (isJoker) {
+                  flyingCard.innerHTML = `
+                    <div class="cardContent">
+                      <div class="imgWrap"><img class="cardImg" src="./assets/joker.png" alt="joker" draggable="false" /></div>
+                    </div>
+                  `;
+                } else {
+                  flyingCard.innerHTML = `
+                    <div class="cardContent">
+                      <div class="imgWrap"><img class="cardImg" src="${card.imgSrc || ''}" alt="card" draggable="false" /></div>
+                    </div>
+                  `;
+                }
+
+                document.body.appendChild(flyingCard);
+
+                // 目标位置：左右两堆
+                const targetXPercent = cardIdx === 0 ? 0.28 : 0.72;
+                const targetX = toRect.left + toRect.width * targetXPercent;
+                const targetY = toRect.top + toRect.height * 0.52;
+
+                const dx = targetX - (fromRect.left + fromRect.width / 2);
+                const dy = targetY - (fromRect.top + fromRect.height / 2);
+
+                // 计算目标缩放（匹配弃牌堆大小）
+                const discardScale = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--scale-discard-pile') || "1");
+                const targetWidth = 92 * discardScale; // 弃牌堆基础宽度
+                const scaleTarget = targetWidth / 92; // 飞行卡牌当前宽度 92px
+
+                // 计算目标旋转角度（与弃牌堆一致）
+                // 弃牌堆的 z-index 计算：左堆 = 10 + floor(discardLength/2), 右堆 = 100 + floor(discardLength/2)
+                const currentDiscardLength = game.discardPile.length;
+                const targetZ = cardIdx === 0 ? (10 + Math.floor(currentDiscardLength / 2)) : (100 + Math.floor(currentDiscardLength / 2));
+
+                // 使用与 renderDiscardPile 相同的旋转角度计算
+                function hash01(str) {
+                  let h = 2166136261;
+                  for (let i = 0; i < str.length; i++) {
+                    h ^= str.charCodeAt(i);
+                    h = Math.imul(h, 16777619);
+                  }
+                  return ((h >>> 0) % 10000) / 10000;
+                }
+                const targetRotation = (hash01(`${card.id}|${targetZ}`) - 0.5) * 8; // -4..4 deg
+
+                const anim = flyingCard.animate(
+                  [
+                    { transform: "translate(0px, 0px) scale(1) rotate(0deg)", opacity: 1 },
+                    { transform: `translate(${dx}px, ${dy}px) scale(${scaleTarget}) rotate(${targetRotation}deg)`, opacity: 0.9 }
+                  ],
+                  { duration: 520, easing: "cubic-bezier(.2,.9,.2,1)" }
+                );
+
+                anim.onfinish = () => {
+                  flyingCard.remove();
+                  pairAnimsCompleted++;
+                  totalAnimsCompleted++;
+
+                  // 🆕 每张卡落地后，立即更新弃牌堆显示
+                  renderDiscardPile(game);
+
+                  // 当前对的两张牌都飞完后，延迟800-1200ms再出下一对
+                  if (pairAnimsCompleted === 2) {
+                    pairIdx++;
+                    if (pairIdx < pairs.length) {
+                      const pairDelay = 800 + Math.random() * 400;
+                      setTimeout(() => {
+                        playNextPair();
+                      }, pairDelay);
+                    } else {
+                      // 该AI所有牌出完
+                      playNextPair();
+                    }
+                  }
+                };
+              });
+            }
+
+            // 开始播放该AI的第一对
+            playNextPair();
+          }, thinkDelay);
+        }
+
+        // 开始播放第一个AI
+        playNextPlayer();
+      } else {
+        // 没有初始配对，直接继续
+        proceedAfterInitialPairs();
+      }
+    }
+
+    function proceedAfterInitialPairs() {
+      // 配对完成，开始游戏
+      renderAll(game, settings);
+      runAiLoop(game, settings);
+    }
+
+    // 在最后一张卡动画完成时立即触发Joker特效
+    window.setTimeout(() => {
+      handleJokerThenPairs();
+    }, lastCardCompleteMs);
+
+    // 稍后再进行清理
+    window.setTimeout(() => {
+      // Cleanup
+      for (const el of [...allFace, ...aiBacks]) {
+        el.classList.remove("dealAnim");
+        el.style.animationDelay = "";
+        el.style.transitionDelay = "";
+        // keep AI fade classes removed as well
+        el.classList.remove("dealInit", "dealIn");
+      }
+      isDealing = false;
+      lastTurnPlayerId = game.players[game.currentPlayerIndex]?.id || null;
+      markHumanAction();
+    }, totalMs);
+    lastTurnPlayerId = game.players[game.currentPlayerIndex]?.id || null;
+    markHumanAction(); // start the 8s timer baseline if it's your turn
+  }
+
+  autoNextToggle.addEventListener("change", syncSettings);
+  pairCountInput.addEventListener("input", syncSettings);
+  pairCountNum.addEventListener("input", () => {
+    const min = Number(pairCountInput.min || 1);
+    const max = Number(pairCountInput.max || 999);
+    const step = Number(pairCountInput.step || 1);
+    const pc = clampToStep(Number(pairCountNum.value), min, max, step);
+    pairCountInput.value = String(pc);
+    syncSettings();
+  });
+  pairCountNum.addEventListener("change", () => {
+    // Normalize on blur/enter
+    const min = Number(pairCountInput.min || 1);
+    const max = Number(pairCountInput.max || 999);
+    const step = Number(pairCountInput.step || 1);
+    const pc = clampToStep(Number(pairCountNum.value), min, max, step);
+    pairCountNum.value = String(pc);
+    pairCountInput.value = String(pc);
+    syncSettings();
+  });
+
+  btnStart.addEventListener("click", startNewGame);
+  btnRestart.addEventListener("click", () => {
+    $("#game").classList.add("hidden");
+    $("#setup").classList.remove("hidden");
+    $("#message").innerHTML = "";
+    game = null;
+    selected = [];
+    window.clearTimeout(hintT);
+    hintT = null;
+    window.clearTimeout(runAiLoop._t);
+    runAiLoop._t = null;
+    endOverlay.classList.add("hidden");
+    updateTuneButtonState();
+  });
+
+  btnPlayAgain.addEventListener("click", () => {
+    startNewGame();
+  });
+
+  btnBackToSetup.addEventListener("click", () => {
+    btnRestart.click();
+  });
+
+  btnTune.addEventListener("click", () => {
+    if (btnTune.disabled) return;
+    tunerPanel.classList.toggle("hidden");
+  });
+  btnTuneClose.addEventListener("click", () => {
+    tunerPanel.classList.add("hidden");
+  });
+  btnTuneReset.addEventListener("click", () => {
+    layout = JSON.parse(JSON.stringify(DEFAULT_LAYOUT));
+    saveLayout(layout);
+    applyLayout(layout);
+    buildTunerUI(layout);
+  });
+
+  btnTuneImport.addEventListener("click", () => {
+    const example = JSON.stringify(layout, null, 2);
+    const raw = window.prompt("粘贴布局 JSON（会覆盖当前布局）：", example);
+    if (!raw) return;
+    try {
+      const parsed = JSON.parse(raw);
+      const required = ["top", "left", "right", "bottom", "center"];
+      for (const k of required) {
+        if (!parsed[k]) throw new Error("missing " + k);
+        for (const p of ["left", "top", "width", "height"]) {
+          if (typeof parsed[k][p] !== "number") throw new Error(`invalid ${k}.${p}`);
+        }
+      }
+      if (parsed.buttons) {
+        // Optional
+        for (const key of ["hint", "match", "endturn"]) {
+          if (parsed.buttons[key]) {
+            if (typeof parsed.buttons[key].x !== "number") throw new Error(`invalid buttons.${key}.x`);
+            if (typeof parsed.buttons[key].y !== "number") throw new Error(`invalid buttons.${key}.y`);
+          }
+        }
+      }
+      layout = parsed;
+      if (!layout.buttons) layout.buttons = JSON.parse(JSON.stringify(DEFAULT_LAYOUT.buttons));
+      saveLayout(layout);
+      applyLayout(layout);
+      buildTunerUI(layout);
+    } catch (e) {
+      alert("导入失败：JSON 格式或字段不对。");
+    }
+  });
+  btnTuneCopy.addEventListener("click", async () => {
+    const text = JSON.stringify(layout, null, 2);
+    try {
+      await navigator.clipboard.writeText(text);
+      alert("参数已复制到剪贴板！");
+    } catch {
+      // Fallback: prompt copy
+      const copied = window.prompt("复制下面的参数（Cmd+C）：", text);
+      if (copied !== null) {
+        alert("请手动复制上面的参数");
+      }
+    }
+  });
+
+  function syncSelectionUi() {
+    const isHumanTurn = game && !game.gameOver && game.players[game.currentPlayerIndex].kind === "human";
+    const canTry = isHumanTurn && selected.length === 2;
+    btnTryMatch.disabled = !canTry;
+    btnClearSelect.disabled = !isHumanTurn || selected.length === 0;
+  }
+
+  function renderSelectionHighlights() {
+    const cards = Array.from($("#pBottomHand").querySelectorAll(".faceCard"));
+    for (const el of cards) {
+      const id = el.dataset.cardId;
+      el.classList.toggle("selected", selected.includes(id));
+    }
+  }
+
+  function clearSelection() {
+    selected = [];
+    renderSelectionHighlights();
+    syncSelectionUi();
+  }
+
+  // 上家手牌区域旋转-90度动画并合拢
+  function animateUpstreamRotateAndOpen(fromIdx, seatHandEl) {
+    try {
+      const cards = Array.from(seatHandEl.querySelectorAll(".miniBack"));
+      const numCards = cards.length;
+
+      if (numCards === 0) {
+        openDrawOverlay(fromIdx);
+        return;
+      }
+
+      // 获取源手牌区域的位置
+      const srcRect = seatHandEl.getBoundingClientRect();
+
+      // 计算最后一张牌的位置（作为合拢目标）
+      const cCenter = (numCards - 1) / 2;
+      const lastCardIndex = numCards - 1;
+      const lastD = lastCardIndex - cCenter; // = cCenter
+
+      let lastSx = 0;
+      let lastSy = 0;
+
+      if (fromIdx === 2) {
+        // 上方玩家：向左展开
+        lastSx = lastD * 12;
+        lastSy = lastD * 0.3;
+      } else {
+        // 左右玩家：向下展开
+        lastSx = lastD * 0.3;
+        lastSy = lastD * 9;
+      }
+
+      // 合拢动画：将所有卡牌移动到最后一张牌的位置
+      cards.forEach((card) => {
+        card.style.transition = "left 300ms cubic-bezier(0.22, 1, 0.36, 1), top 300ms cubic-bezier(0.22, 1, 0.36, 1), transform 300ms cubic-bezier(0.22, 1, 0.36, 1)";
+        card.style.setProperty("--sx", `${lastSx}px`);
+        card.style.setProperty("--sy", `${lastSy}px`);
+      });
+
+      // 计算抽牌界面第一张卡的位置（相对于srcRect的偏移）
+      const CARD_W = 140;
+      const CARD_H = 196;
+      const GAP = 12;
+      const OVERLAY_PAD_X = 12;
+      const OVERLAY_PAD_TOP = 14;
+      const ROW_PAD_X = 6;
+
+      let x3 = 0;
+      let y3 = 0;
+
+      try {
+        const tableBg = document.querySelector(".tableBg");
+        const rect = tableBg ? tableBg.getBoundingClientRect() : null;
+        if (rect) {
+          const w = Math.max(320, Math.floor(rect.width));
+          const overlayLeft = (window.innerWidth - w) / 2;
+          const rowLeft = overlayLeft + OVERLAY_PAD_X + ROW_PAD_X;
+          const rowW = Math.max(0, w - OVERLAY_PAD_X * 2);
+          const avail = Math.max(0, rowW - ROW_PAD_X * 2);
+          const contentW = numCards * CARD_W + Math.max(0, numCards - 1) * GAP;
+          const leftMostX = contentW <= avail
+            ? rowLeft + (avail - contentW) / 2
+            : rowLeft;
+          x3 = leftMostX - srcRect.left;
+
+          // 计算Y位置
+          const tableCy = rect.top + rect.height / 2;
+          const viewCy = window.innerHeight / 2;
+          const overlayDy = tableCy - viewCy;
+          const overlayTop = viewCy - 100 + overlayDy;
+          const rowTop = overlayTop + OVERLAY_PAD_TOP + 14; // drawHint margin-top 已改为14px
+          const firstCardInitialY = rowTop + 18 + CARD_H / 2;
+          const srcCardCenterY = srcRect.top + srcRect.height / 2;
+          y3 = firstCardInitialY - srcCardCenterY;
+        }
+      } catch {
+        // keep fallback
+      }
+
+      // 旋转和位移动画
+      seatHandEl.style.transformOrigin = "center center";
+      seatHandEl.style.transition = "transform 300ms cubic-bezier(0.22, 1, 0.36, 1)";
+      seatHandEl.style.transform = `translate(${x3}px, ${y3}px) rotate(-90deg)`;
+
+      // 动画结束后打开抽牌界面
+      setTimeout(() => {
+        openDrawOverlay(fromIdx);
+      }, 300);
+
+    } catch (err) {
+      console.error("animateUpstreamRotateAndOpen error:", err);
+      openDrawOverlay(fromIdx);
+    }
+  }
+
+  function openDrawOverlay(fromIdx) {
+    console.log(">>> openDrawOverlay 被调用, fromIdx:", fromIdx);
+
+    if (!game || game.gameOver) {
+      console.log(">>> 游戏不存在或已结束");
+      return;
+    }
+    advancePastOutPlayers();
+    const current = game.players[game.currentPlayerIndex];
+    if (!current || current.out || current.kind !== "human") {
+      console.log(">>> 当前玩家不是人类或已出局");
+      return;
+    }
+    if (game.turnHasDrawn) {
+      console.log(">>> 本回合已经抽过牌了");
+      return;
+    }
+    const upstreamIdx = window.Game.getUpstreamPlayerIndex(game);
+    if (fromIdx !== upstreamIdx) {
+      console.log(">>> fromIdx 不是上家:", fromIdx, "!=", upstreamIdx);
+      return;
+    }
+    const target = game.players[fromIdx];
+    if (!target || target.out || target.hand.length === 0) {
+      console.log(">>> 目标玩家不存在或已出局或无牌");
+      return;
+    }
+
+    console.log(">>> 准备调用 ensureHumanCanMatch");
+
+    // 在显示抽牌界面前，根据连续未匹配次数决定是否作弊换牌（瞬间完成，无动画）
+    try {
+      window.Game.ensureHumanCanMatch(game);
+      console.log(">>> ensureHumanCanMatch 调用完成");
+    } catch (e) {
+      console.error(">>> ensureHumanCanMatch error:", e);
+    }
+
+    console.log(">>> 显示抽牌界面");
+    drawOverlay.classList.remove("hidden");
+    // Restore content visibility (in case it was hidden during animation)
+    if (drawOverlayInner) drawOverlayInner.style.opacity = "";
+    drawRow.innerHTML = "";
+    drawScroll.classList.add("hidden");
+    drawThumb.style.setProperty("--thumbW", "100%");
+    drawThumb.style.setProperty("--thumbX", "0px");
+
+    // Clamp overlay width to the background table so cards never exceed table edges.
+    try {
+      const tableBg = document.querySelector(".tableBg");
+      if (tableBg && drawOverlayInner) {
+        const rect = tableBg.getBoundingClientRect();
+        const w = Math.max(320, Math.floor(rect.width));
+        drawOverlayInner.style.width = `${w}px`;
+        // Also align overlay vertically to the tableBg center (prevents the row looking "too low").
+        const tableCy = rect.top + rect.height / 2;
+        const viewCy = window.innerHeight / 2;
+        const dy = tableCy - viewCy;
+        drawOverlayInner.style.transform = `translateY(${Math.round(dy)}px)`;
+      }
+    } catch {
+      // ignore
+    }
+
+    // No auto-sizing: drawBack uses fixed CSS size; row can scroll horizontally if needed.
+    // Ensure the first card is fully visible by default.
+    try {
+      drawRow.scrollLeft = 0;
+    } catch {
+      // ignore
+    }
+
+    // 禁用过渡ghost卡牌动画（直接打开抽牌界面，无过渡）
+    // if (!suppressDrawOverlayGhost) { ... } 已删除
+
+    // Thumb animation: start as full bar, then shrink to correct width in sync with the "spread" timeline.
+    // If the user interacts (wheel/drag), we will instantly finish this animation for max smoothness.
+    try { if (drawThumbAnimRaf != null) window.cancelAnimationFrame(drawThumbAnimRaf); } catch { /* ignore */ }
+    drawThumbAnimRaf = null;
+    drawThumbFinalWPercent = 100;
+    drawThumb.style.setProperty("--thumbDur", `0ms`);
+    drawThumb.style.setProperty("--thumbW", "100%");
+    drawThumb.style.setProperty("--thumbX", "0px");
+
+    for (let i = 0; i < target.hand.length; i++) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "drawBack";
+      b.dataset.fromPlayerIndex = String(fromIdx);
+      b.dataset.drawIndex = String(i);
+      // "码开" feel: start overlapped then spread to normal positions.
+      b.style.setProperty("--preX", `${-i * 26}px`);
+      b.addEventListener("click", () => {
+        if (!game || game.gameOver) return;
+        advancePastOutPlayers();
+        const cur = game.players[game.currentPlayerIndex];
+        if (!cur || cur.out || cur.kind !== "human") {
+          closeDrawOverlay();
+          renderAll(game, settings);
+          runAiLoop(game, settings);
+          return;
+        }
+        if (game.turnHasDrawn) return;
+        markHumanAction();
+
+        // 实时替换机制：根据渐进概率，抽牌瞬间检查并替换成可匹配的牌
+        // 第1次：100%（本局第一次抽牌）
+        // 第2次：60%（consecutiveNoMatch=0，上次匹配成功后）
+        // 第3次：80%（consecutiveNoMatch=1，连续1次未匹配）
+        // 第4次：100%（consecutiveNoMatch=2，连续2次未匹配）
+        // 之后清零重新循环
+        let replaceProbability = 0;
+        if (game.humanFirstDrawInGame) {
+          replaceProbability = 0.6; // 第1次：60%（进一步降低）
+        } else if (game.humanConsecutiveNoMatch === 0) {
+          replaceProbability = 0.4; // 40%（降低）
+        } else if (game.humanConsecutiveNoMatch === 1) {
+          replaceProbability = 0.6; // 60%（降低）
+        } else if (game.humanConsecutiveNoMatch >= 2) {
+          replaceProbability = 0.85; // 85%（从100%降低，增加挑战）
+        }
+
+        const replaceRoll = Math.random();
+        const shouldReplace = replaceRoll <= replaceProbability;
+        console.log(`[实时替换] consecutiveNoMatch:${game.humanConsecutiveNoMatch} 概率:${(replaceProbability * 100).toFixed(0)}% 骰子:${(replaceRoll * 100).toFixed(0)}% 触发:${shouldReplace}`);
+
+        if (shouldReplace) {
+          const drawnCard = target.hand[i];
+          const human = game.players[0];
+
+          // 检查这张牌是否可以与玩家手牌匹配
+          const canMatch = drawnCard && drawnCard.pairId &&
+            human.hand.some(c => c && c.pairId === drawnCard.pairId && c !== drawnCard);
+
+          if (!canMatch && drawnCard && drawnCard.type !== "joker") {
+            console.log(`[实时替换] 第${i}张牌不可匹配，寻找替换...`);
+
+            // 从其他AI手中找一张可匹配的牌，优先选择能平衡A/B的牌
+            const humanPairIds = new Set();
+            for (const c of human.hand) {
+              if (c && c.pairId && c.type !== "joker") {
+                humanPairIds.add(c.pairId);
+              }
+            }
+
+            // 计算玩家手牌A/B不平衡度
+            let aCount = 0, bCount = 0;
+            for (const c of human.hand) {
+              if (!c || c.type === "joker" || !c.side) continue;
+              if (c.side === "A") aCount++;
+              else if (c.side === "B") bCount++;
+            }
+            const diff = aCount - bCount;
+            const needSide = diff > 0 ? "B" : (diff < 0 ? "A" : null);
+            console.log(`[平衡] 玩家手牌 A:${aCount} B:${bCount} 差异:${diff} 需要:${needSide || "均衡"}`);
+
+            // 收集所有候选牌并按优先级排序
+            const candidates = [];
+            for (let pi = 0; pi < game.players.length; pi++) {
+              if (pi === 0 || pi === fromIdx) continue;
+              const donor = game.players[pi];
+              if (donor.out || donor.hand.length === 0) continue;
+
+              for (let ci = 0; ci < donor.hand.length; ci++) {
+                const c = donor.hand[ci];
+                if (c && c.pairId && c.type !== "joker" && humanPairIds.has(c.pairId)) {
+                  // 优先级：能平衡A/B的牌优先级高
+                  const priority = (needSide && c.side === needSide) ? 10 : 1;
+                  candidates.push({ pi, ci, card: c, priority });
+                }
+              }
+            }
+
+            let replacementFound = false;
+            if (candidates.length > 0) {
+              // 按优先级排序，优先选择能平衡的牌
+              candidates.sort((a, b) => b.priority - a.priority);
+              const chosen = candidates[0];
+
+              // 瞬间交换
+              const temp = target.hand[i];
+              target.hand[i] = chosen.card;
+              game.players[chosen.pi].hand[chosen.ci] = temp;
+              console.log(`[实时替换] 成功！换入 ${chosen.card.side} 侧牌 ${chosen.card.pairId}（优先级:${chosen.priority}）`);
+              replacementFound = true;
+            }
+
+            if (!replacementFound) {
+              console.log(`[实时替换] 未找到可替换的牌（其他AI手里也没有可匹配的了）`);
+            }
+          } else {
+            console.log(`[实时替换] 第${i}张牌已可匹配或是JOKER，无需替换`);
+          }
+        } else {
+          console.log(`[实时替换] 未触发（运气不好）`);
+        }
+
+        // Get the card that will be drawn (peek before actual draw)
+        const drawnCard = target.hand[i];
+        const isJoker = drawnCard && drawnCard.type === "joker";
+
+        closeDrawOverlay();
+
+        if (isJoker) {
+          // Joker: fly to center, reveal, then to hand
+          animateJokerDrawReveal(fromIdx, 0, () => {
+            // Execute actual draw after animation completes
+            window.Game.drawCard(game, fromIdx, i);
+            clearSelection();
+            renderAll(game, settings);
+          });
+        } else {
+          // Normal card: fly directly to hand
+          animateDrawCardFly(fromIdx, 0, drawnCard, () => {
+            // Execute actual draw
+            window.Game.drawCard(game, fromIdx, i);
+            clearSelection();
+            renderAll(game, settings);
+          });
+        }
+      });
+      drawRow.appendChild(b);
+      // stagger in
+      window.setTimeout(() => {
+        b.classList.add("in");
+
+        // 调试：打印第一张卡的中心点位置
+        if (i === 0) {
+          window.setTimeout(() => {
+            const rect = b.getBoundingClientRect();
+            const centerX = rect.left + rect.width / 2;
+            const centerY = rect.top + rect.height / 2;
+            console.log('抽1卡牌中心点位置:', { x: centerX, y: centerY, rect });
+          }, 500); // 等待展开动画完成
+        }
+      }, 30 + i * 18);
+    }
+
+    // Align behavior:
+    // - If cards fit in the row, center them (so 1 card sits in the middle).
+    // - If overflow, left-align and keep first card fully visible.
+    window.requestAnimationFrame(() => {
+      try {
+        // need a second frame for layout to settle after images/styles
+        window.requestAnimationFrame(() => {
+          // IMPORTANT: don't rely on scrollWidth here because entry transforms can distort the visual layout
+          // and make it *look* like scrolling does nothing. Compute deterministically.
+          const nCards = target.hand.length;
+          const CARD_W = 140;
+          const GAP = 12;
+          const PAD = 6; // .drawRow padding left/right
+          const contentW = nCards * CARD_W + Math.max(0, nCards - 1) * GAP;
+          const avail = Math.max(0, drawRow.clientWidth - PAD * 2);
+          const fits = contentW <= avail + 1;
+
+          drawRow.style.justifyContent = fits ? "center" : "flex-start";
+          drawRow.scrollLeft = 0;
+
+          // Custom scrollbar: only show when overflow.
+          try {
+            if (!fits) {
+              drawScroll.classList.remove("hidden");
+              // Thumb width ratio based on deterministic widths.
+              const scrollW = Math.max(avail, contentW);
+              const ratio = avail / scrollW;
+              const w = Math.max(10, Math.min(100, Math.floor(ratio * 1000) / 10)); // %
+              drawThumbFinalWPercent = w;
+              // Animate thumb shrinking in sync with the spread.
+              // Spread timeline: last card starts at (30 + (n-1)*18) then transitions for ~420ms.
+              const total = 30 + Math.max(0, nCards - 1) * 18 + 420;
+              const start = performance.now();
+              const easeOut = (t) => 1 - Math.pow(1 - t, 3); // close to the feel we use elsewhere
+              try { if (drawThumbAnimRaf != null) window.cancelAnimationFrame(drawThumbAnimRaf); } catch { /* ignore */ }
+              drawThumbAnimRaf = null;
+              const step = (now) => {
+                const p01 = Math.max(0, Math.min(1, (now - start) / Math.max(1, total)));
+                const e = easeOut(p01);
+                const cur = 100 + (drawThumbFinalWPercent - 100) * e;
+                drawThumb.style.setProperty("--thumbW", `${cur}%`);
+                if (p01 < 1) drawThumbAnimRaf = window.requestAnimationFrame(step);
+                else {
+                  drawThumbAnimRaf = null;
+                  drawThumb.style.setProperty("--thumbW", `${drawThumbFinalWPercent}%`);
+                }
+              };
+              drawThumbAnimRaf = window.requestAnimationFrame(step);
+              if (typeof recalcDrawScrollSoon === "function") recalcDrawScrollSoon();
+            } else {
+              drawScroll.classList.add("hidden");
+              if (typeof recalcDrawScrollSoon === "function") recalcDrawScrollSoon();
+            }
+          } catch {
+            // ignore
+          }
+        });
+      } catch {
+        // ignore
+      }
+    });
+  }
+
+  function closeDrawOverlay() {
+    drawOverlay.classList.add("hidden");
+    drawRow.innerHTML = "";
+    drawScroll.classList.add("hidden");
+    if (typeof recalcDrawScrollSoon === "function") recalcDrawScrollSoon();
+    if (drawOverlayInner) {
+      drawOverlayInner.style.width = "";
+      drawOverlayInner.style.transform = "";
+      drawOverlayInner.style.opacity = "";
+    }
+    // Reset background styles
+    drawOverlay.style.background = "";
+    drawOverlay.style.backdropFilter = "";
+    suppressDrawOverlayGhost = false;
+  }
+
+  function animateUpstreamHandThenOpen(fromIdx) {
+    // Only animate the upstream pile (table). Draw overlay stays unchanged.
+    if (upstreamOpenAnimating) return;
+    if (!game || game.gameOver) return;
+    advancePastOutPlayers();
+    const current = game.players[game.currentPlayerIndex];
+    if (!current || current.out || current.kind !== "human") return;
+    if (game.turnHasDrawn) return;
+    const upstreamIdx = window.Game.getUpstreamPlayerIndex(game);
+    if (fromIdx !== upstreamIdx) return;
+    const target = game.players[fromIdx];
+    if (!target || target.out || target.hand.length === 0) return;
+
+    const srcHand = document.querySelector(`.seatHand[data-from-player-index="${fromIdx}"]`);
+    if (!srcHand) {
+      openDrawOverlay(fromIdx);
+      return;
+    }
+    const srcRect = srcHand.getBoundingClientRect();
+    if (!srcRect) {
+      openDrawOverlay(fromIdx);
+      return;
+    }
+
+    upstreamOpenAnimating = true;
+    suppressDrawOverlayGhost = true;
+
+    // Show drawOverlay immediately with fade-in animation for background blur
+    drawOverlay.classList.remove("hidden");
+    drawOverlay.style.background = "rgba(0,0,0,0)";
+    drawOverlay.style.backdropFilter = "blur(0px)";
+    // Hide content initially (only show background)
+    if (drawOverlayInner) drawOverlayInner.style.opacity = "0";
+
+    // Animate background to final state over the same duration as hand animation
+    const bgAnim = drawOverlay.animate(
+      [
+        { background: "rgba(0,0,0,0)", backdropFilter: "blur(0px)" },
+        { background: "rgba(0,0,0,0.65)", backdropFilter: "blur(4px)" }
+      ],
+      { duration: 300, fill: "forwards", easing: "ease-out" }
+    );
+    bgAnim.onfinish = () => {
+      drawOverlay.style.background = "";
+      drawOverlay.style.backdropFilter = "";
+    };
+
+    // Clone the upstream pile and animate the clone (do not touch the real layout).
+    const ghost = srcHand.cloneNode(true);
+    ghost.classList.add("upstreamHandGhost");
+    ghost.style.left = `${srcRect.left}px`;
+    ghost.style.top = `${srcRect.top}px`;
+    ghost.style.width = `${srcRect.width}px`;
+    ghost.style.height = `${srcRect.height}px`;
+    document.body.appendChild(ghost);
+    // Avoid double vision.
+    srcHand.style.visibility = "hidden";
+
+    // 卡牌保持原始分布，不收缩间隔（移除了collapse动画）
+    // 只保留整体的位移和旋转
+
+    // No need for separate scale animation - topCard is now a drawBack (140px)
+    // Decide "toward center" direction automatically:
+    // - If upstream pile is on the left side of the table, +X moves toward center
+    // - If it's on the right side, -X moves toward center
+    let dir = 1;
+    try {
+      const tableBg = document.querySelector(".tableBg");
+      const tRect = tableBg ? tableBg.getBoundingClientRect() : null;
+      if (tRect) {
+        const tableCx = tRect.left + tRect.width / 2;
+        const srcCx = srcRect.left + srcRect.width / 2;
+        dir = srcCx < tableCx ? 1 : -1;
+      } else {
+        // fallback: right player (1) tends to be on the right side
+        dir = fromIdx === 1 ? -1 : 1;
+      }
+    } catch {
+      dir = fromIdx === 1 ? -1 : 1;
+    }
+
+    // Trajectory (updated): start directly from step2 (green) -> step3 (blue).
+    // Values are absolute translate positions relative to the starting point (ghost starts at 0).
+    const x2 = -70 * dir;   // step2 (green) - horizontal wind-up
+    const y2 = 0;           // step2 - no vertical movement during wind-up
+    // Step3 end: align to the first card position in the draw overlay row.
+    // Compute analytically (no need to toggle overlay visibility, avoiding any layout side-effects).
+    let x3 = 310 * dir; // fallback
+    let y3 = 0;         // fallback
+    try {
+      const nCards = target.hand.length;
+      const CARD_W = 140;
+      const CARD_H = 196;
+      const GAP = 12;
+      const OVERLAY_PAD_X = 12; // .drawOverlayInner padding: 14px 12px 12px
+      const OVERLAY_PAD_TOP = 14; // .drawOverlayInner padding top
+      const ROW_PAD_X = 6; // .drawRow padding: 6px 6px ...
+
+      const tableBg = document.querySelector(".tableBg");
+      const rect = tableBg ? tableBg.getBoundingClientRect() : null;
+      if (rect) {
+        const w = Math.max(320, Math.floor(rect.width));
+        const overlayLeft = (window.innerWidth - w) / 2;
+        const rowLeft = overlayLeft + OVERLAY_PAD_X + ROW_PAD_X;
+        const rowW = Math.max(0, w - OVERLAY_PAD_X * 2);
+        const avail = Math.max(0, rowW - ROW_PAD_X * 2);
+        const contentW = nCards * CARD_W + Math.max(0, nCards - 1) * GAP;
+        const leftMostX =
+          contentW <= avail
+            ? rowLeft + (avail - contentW) / 2
+            : rowLeft;
+        x3 = leftMostX - srcRect.left;
+
+        console.log(`[Position] leftMostX: ${leftMostX}, srcRect.left: ${srcRect.left}, x3: ${x3}`);
+
+        // Calculate Y position: align to INITIAL position of first drawBack card
+        const tableCy = rect.top + rect.height / 2;
+        const viewCy = window.innerHeight / 2;
+        const overlayDy = tableCy - viewCy;
+        // drawOverlayInner is vertically centered and offset by overlayDy
+        const overlayTop = viewCy - 100 + overlayDy; // approximate drawOverlayInner height / 2
+        const rowTop = overlayTop + OVERLAY_PAD_TOP + 12; // top of drawRow
+        // drawBack initial position: translateY(18px) from top of row
+        const firstCardInitialY = rowTop + 18 + CARD_H / 2; // 18px down + half card height for center
+        // Source card center Y
+        const srcCardCenterY = srcRect.top + srcRect.height / 2;
+        y3 = firstCardInitialY - srcCardCenterY;
+
+        console.log(`[Position Y] rowTop: ${rowTop}, firstCardInitialY: ${firstCardInitialY}, srcCardCenterY: ${srcCardCenterY}, y3: ${y3}`);
+      }
+    } catch {
+      // keep fallback
+    }
+
+    console.log(`[Final Position] x3: ${x3}, y3: ${y3}`);
+
+    // Rebuild the ghost so translation/scale and rotation can be animated independently.
+    // This removes the visible "pause" at the end of step1: rotation is time-based from step1 start to step2 end.
+    const wrap = document.createElement("div");
+    wrap.className = "upstreamHandGhost";
+    wrap.style.left = `${srcRect.left}px`;
+    wrap.style.top = `${srcRect.top}px`;
+    wrap.style.width = `${srcRect.width}px`;
+    wrap.style.height = `${srcRect.height}px`;
+    wrap.style.transformOrigin = "center center";
+    document.body.appendChild(wrap);
+    // IMPORTANT: reuse the already-cloned `ghost` (it was created before we hid `srcHand`),
+    // otherwise cloning after `srcHand.style.visibility="hidden"` would copy that and become invisible.
+    const inner = ghost;
+    // Ensure visible and reset any positioning copied from the first-ghost usage.
+    inner.style.visibility = "";
+    inner.classList.remove("upstreamHandGhost");
+    inner.style.position = "absolute";
+    inner.style.left = "0";
+    inner.style.top = "0";
+    // IMPORTANT: Keep the exact dimensions instead of using 100% to prevent shrinking
+    inner.style.width = `${srcRect.width}px`;
+    inner.style.height = `${srcRect.height}px`;
+    inner.style.transformOrigin = "center";
+    wrap.appendChild(inner);
+
+    // Move + scale (2 segments).
+    // Phase 1 (0-70%): Slow wind-up preparation, move to x2/y2, keep scale 1
+    // Phase 2 (70-100%): Fast "throw" motion, snap to x3/y3, keep scale 1
+    console.log(`[Wrap Scale Animation] Phase 1: scale(1), Phase 2: scale(1) (no scaling)`);
+    const aMove = wrap.animate(
+      [
+        { offset: 0, transform: "translate(0px, 0px) scale(1)", opacity: 1, easing: "cubic-bezier(0.33, 0, 0.67, 1)" },
+        // Phase 1 end: reach x2/y2, no scale change
+        { offset: 0.70, transform: `translate(${x2}px, ${y2}px) scale(1)`, opacity: 1, easing: "cubic-bezier(0.12, 0, 0.24, 1)" },
+        // Phase 2: explosive "throw" to final position, no scale change
+        { offset: 1, transform: `translate(${x3}px, ${y3}px) scale(1)`, opacity: 1 },
+      ],
+      { duration: 300, fill: "forwards" }
+    );
+
+    // Rotation: sync with movement phases
+    // Phase 1 (0-70%): Gradual rotation during wind-up
+    // Phase 2 (70-100%): Quick final rotation adjustment
+    inner.animate(
+      [
+        { offset: 0, transform: "rotate(0deg)", easing: "cubic-bezier(0.33, 0, 0.67, 1)" },
+        // Phase 1 end: most rotation done during wind-up
+        { offset: 0.70, transform: "rotate(-120deg)", easing: "cubic-bezier(0.12, 0, 0.24, 1)" },
+        // Phase 2: quick final adjustment
+        { offset: 1, transform: "rotate(-90deg)" },
+      ],
+      { duration: 300, fill: "forwards" }
+    );
+
+    // Open overlay slightly before animation ends for seamless transition
+    // This allows drawBack cards to start their stagger animation as upstream card arrives
+    window.setTimeout(() => {
+      openDrawOverlay(fromIdx);
+    }, 270); // 270ms = 30ms before animation ends, so first card starts appearing at 300ms
+
+    aMove.onfinish = () => {
+      // Cleanup on next frame to avoid a visible "gap" between transitions.
+      window.requestAnimationFrame(() => {
+        try { wrap.remove(); } catch { /* ignore */ }
+        srcHand.style.visibility = "";
+        upstreamOpenAnimating = false;
+        // Keep suppressing the overlay ghost just for this opening.
+        window.setTimeout(() => { suppressDrawOverlayGhost = false; }, 0);
+      });
+    };
+  }
+
+  drawOverlay.addEventListener("click", (e) => {
+    if (e.target === drawOverlay) closeDrawOverlay();
+  });
+  btnDrawClose.addEventListener("click", closeDrawOverlay);
+
+  // Draw overlay: keep custom scrollbar perfectly in sync with drawRow.scrollLeft (and allow dragging).
+  // Rebuilt model (for maximum smoothness):
+  // - Thumb movement drives scrollLeft directly (1px thumb -> proportional scrollLeft).
+  // - ScrollLeft (wheel/touchpad) updates thumb position.
+  // - While the entry "spread" is animating, thumb starts full-width then shrinks; first user interaction
+  //   instantly finishes both the spread and the thumb shrink animation to avoid any jitter.
+  (() => {
+    const ROW_PAD_X = 6; // .drawRow padding left/right
+    const CARD_W = 140;  // .drawBack width
+    const GAP = 12;      // .drawRow gap
+
+    const st = {
+      rafSync: null,
+      rafRecalc: null,
+      dragging: false,
+      // cached geometry
+      maxScroll: 0,
+      trackW: 0,
+      thumbWPercent: 100,
+      thumbWPx: 0,
+      thumbXMax: 0,
+      // thumb position cache (px on track)
+      thumbX: 0,
+      // drag state
+      spid: null,
+      startClientX: 0,
+      startThumbX: 0,
+    };
+
+    function clamp01(x) {
+      return Math.max(0, Math.min(1, x));
+    }
+    function clamp(n, min, max) {
+      return Math.max(min, Math.min(max, n));
+    }
+
+    function readThumbWPercent() {
+      // Prefer the CSS variable we set (e.g. "23.4%"), not offsetWidth (layout read).
+      try {
+        const raw = getComputedStyle(drawThumb).getPropertyValue("--thumbW").trim();
+        if (!raw) return 100;
+        const s = raw.endsWith("%") ? raw.slice(0, -1) : raw;
+        const n = Number.parseFloat(s);
+        if (!Number.isFinite(n)) return 100;
+        return Math.max(1, Math.min(100, n));
+      } catch {
+        return 100;
+      }
+    }
+
+    function recalc() {
+      try {
+        if (drawScroll.classList.contains("hidden")) {
+          st.maxScroll = 0;
+          st.trackW = 0;
+          st.thumbXMax = 0;
+          return;
+        }
+
+        st.trackW = drawScroll.clientWidth;
+        st.thumbWPercent = readThumbWPercent();
+        st.thumbWPx = st.trackW * (st.thumbWPercent / 100);
+        st.thumbXMax = Math.max(0, st.trackW - st.thumbWPx);
+
+        // Use deterministic geometry during entry transforms (more stable), but fall back to real scrollWidth
+        // when it's larger (after spread has finished).
+        const nCards = drawRow ? drawRow.children.length : 0;
+        const avail = Math.max(0, drawRow.clientWidth - ROW_PAD_X * 2);
+        const contentW = nCards * CARD_W + Math.max(0, nCards - 1) * GAP;
+        const detMax = Math.max(0, contentW - avail);
+        const realMax = Math.max(0, drawRow.scrollWidth - drawRow.clientWidth);
+        st.maxScroll = Math.max(detMax, realMax);
+
+        // Keep cached thumbX inside bounds after geometry changes.
+        st.thumbX = clamp(st.thumbX, 0, st.thumbXMax);
+      } catch {
+        // ignore
+      }
+    }
+
+    function setThumbX(x) {
+      st.thumbX = clamp(x, 0, st.thumbXMax);
+      drawThumb.style.setProperty("--thumbX", `${st.thumbX}px`);
+    }
+
+    function setThumbFromScrollLeft(scrollLeft) {
+      try {
+        if (drawScroll.classList.contains("hidden")) return;
+        const max = Math.max(1, st.maxScroll);
+        const p = clamp01(scrollLeft / max);
+        setThumbX(p * st.thumbXMax);
+      } catch {
+        // ignore
+      }
+    }
+
+    function ensureInstantSpread() {
+      // Entry uses transforms (visual-only). If user starts scrolling/dragging,
+      // finish the spread immediately so scroll feedback is visible.
+      try { drawRow.classList.add("instant"); } catch { /* ignore */ }
+      // Also instantly finish thumb width animation if it's running.
+      try {
+        if (drawThumbAnimRaf != null) {
+          window.cancelAnimationFrame(drawThumbAnimRaf);
+          drawThumbAnimRaf = null;
+        }
+        if (Number.isFinite(drawThumbFinalWPercent)) {
+          drawThumb.style.setProperty("--thumbW", `${drawThumbFinalWPercent}%`);
+        }
+      } catch { /* ignore */ }
+    }
+
+    function scheduleRecalc() {
+      if (st.rafRecalc != null) return;
+      st.rafRecalc = window.requestAnimationFrame(() => {
+        st.rafRecalc = null;
+        recalc();
+        setThumbFromScrollLeft(drawRow.scrollLeft);
+      });
+    }
+
+    function scheduleSync() {
+      if (st.rafSync != null) return;
+      st.rafSync = window.requestAnimationFrame(() => {
+        st.rafSync = null;
+        if (st.dragging) return; // drag path drives thumb directly (more responsive)
+        setThumbFromScrollLeft(drawRow.scrollLeft);
+      });
+    }
+
+    // Init once.
+    scheduleRecalc();
+    // Expose to open/close overlay code (so showing/hiding the bar always refreshes metrics).
+    recalcDrawScrollSoon = scheduleRecalc;
+
+    drawRow.addEventListener("scroll", () => scheduleSync(), { passive: true });
+    drawRow.addEventListener("wheel", () => ensureInstantSpread(), { passive: true });
+
+    // Recalc on size changes (overlay width changes / viewport resize).
+    try {
+      const ro = new ResizeObserver(() => scheduleRecalc());
+      ro.observe(drawRow);
+      ro.observe(drawScroll);
+    } catch {
+      window.addEventListener("resize", () => scheduleRecalc(), { passive: true });
+    }
+
+    function beginDrag(e) {
+      if (drawScroll.classList.contains("hidden")) return;
+      if (!drawRow) return;
+      // Only primary button for mouse
+      if (e.button != null && e.button !== 0) return;
+
+      ensureInstantSpread();
+      recalc();
+      if (st.maxScroll <= 0 || st.thumbXMax <= 0) return;
+
+      st.spid = e.pointerId;
+      st.startClientX = e.clientX;
+      st.startThumbX = st.thumbX;
+      st.dragging = true;
+
+      try { drawScroll.setPointerCapture(st.spid); } catch { /* ignore */ }
+      e.preventDefault();
+
+      // If user clicked the track (not the thumb), jump so the thumb centers around the click.
+      const isThumb = e.target === drawThumb || (e.target && e.target.closest && e.target.closest("#drawThumb"));
+      if (!isThumb) {
+        const trackRect = drawScroll.getBoundingClientRect();
+        const clickX = e.clientX - trackRect.left;
+        const thumbCenterX = st.thumbX + st.thumbWPx / 2;
+        const dx = clickX - thumbCenterX;
+        setThumbX(st.thumbX + dx);
+        // Drive scroll immediately.
+        const p = st.thumbXMax <= 0 ? 0 : st.thumbX / st.thumbXMax;
+        drawRow.scrollLeft = p * st.maxScroll;
+        // rebase after jump
+        st.startClientX = e.clientX;
+        st.startThumbX = st.thumbX;
+      }
+    }
+
+    function moveDrag(e) {
+      if (st.spid == null || e.pointerId !== st.spid) return;
+      if (st.maxScroll <= 0) return;
+      // Use coalesced events for smoother-than-1px mouse steps where available.
+      const evs = typeof e.getCoalescedEvents === "function" ? e.getCoalescedEvents() : [e];
+      let lastX = st.startThumbX;
+      for (const ev of evs) {
+        const dx = ev.clientX - st.startClientX;
+        lastX = st.startThumbX + dx;
+      }
+      setThumbX(lastX);
+      const p = st.thumbXMax <= 0 ? 0 : st.thumbX / st.thumbXMax;
+      drawRow.scrollLeft = p * st.maxScroll;
+      e.preventDefault();
+    }
+
+    function endDrag(e) {
+      if (st.spid == null || e.pointerId !== st.spid) return;
+      try { drawScroll.releasePointerCapture(st.spid); } catch { /* ignore */ }
+      st.spid = null;
+      st.dragging = false;
+      scheduleSync();
+    }
+
+    drawScroll.addEventListener("pointerdown", beginDrag);
+    drawScroll.addEventListener("pointermove", moveDrag);
+    drawScroll.addEventListener("pointerup", endDrag);
+    drawScroll.addEventListener("pointercancel", endDrag);
+  })();
+
+  // Single-card drag (2D) with asymmetric caps + damping:
+  // - Horizontal: max 200px (left/right)
+  // - Vertical: only upward, max 400px; cannot drag downward
+  // - Damping increases near caps; once hitting a cap, lock until release.
+  const bottomHandEl = $("#pBottomHand");
+  let cardPointerId = null;
+  let cardEl = null;
+  let cardLastX = 0;
+  let cardLastY = 0;
+  let cardLastT = 0;
+  let cardDx = 0;
+  let cardDy = 0;
+  let cardVx = 0;
+  let cardVy = 0;
+  let cardS = 1;
+  let cardDragged = false;
+  let cardDownAt = 0;
+  const CARD_DRAG_CAP_X_PX = 200;
+  const CARD_DRAG_CAP_UP_PX = 300;
+  const CARD_DRAG_DAMP_P = 2.5; // exponent for ease-out damping increase (slightly softer near the end)
+  const CARD_DRAG_SCALE_BASE = 1.0;
+  const CARD_DRAG_SCALE_EXTRA = 0.3; // additional scale near caps (ease-out) - max 1.3x
+  const EDGE_DAMP_RADIUS_PX = 220; // within this distance to table edge, damping ramps to max
+  const DAMP_START_FRAC = 1 / 3; // start damping after 1/3 of the pull-to-cap distance
+  let cardLocked = false; // once reached lock point, stop reacting until release
+  let springRaf = null;
+  // No hover-lift; click selection handles the lift.
+
+  function clamp(n, min, max) {
+    return Math.max(min, Math.min(max, n));
+  }
+  function projectToDragRegion(dx, dy) {
+    // dy: only upward (negative), cannot go downward (positive)
+    const ndy = clamp(dy, -CARD_DRAG_CAP_UP_PX, 0);
+    const ndx = dx;
+    if (CARD_DRAG_CAP_X_PX <= 0 || CARD_DRAG_CAP_UP_PX <= 0) {
+      return { dx: 0, dy: 0, hit: true };
+    }
+
+    // Elliptical boundary (smooth arc):
+    // (x/CAP_X)^2 + (y/CAP_UP)^2 <= 1, with y = -dy (upward distance)
+    let tx = ndx / CARD_DRAG_CAP_X_PX;
+    let ty = Math.max(0, -ndy) / CARD_DRAG_CAP_UP_PX;
+    const r2 = tx * tx + ty * ty;
+    if (r2 <= 1) return { dx: ndx, dy: ndy, hit: false };
+    const r = Math.sqrt(r2) || 1;
+    tx /= r;
+    ty /= r;
+    const x2 = tx * CARD_DRAG_CAP_X_PX;
+    const y2 = -ty * CARD_DRAG_CAP_UP_PX;
+    return { dx: x2, dy: y2, hit: true };
+  }
+  function dragFrac(dx, dy) {
+    // 0..1 based on radial distance inside the ellipse.
+    if (CARD_DRAG_CAP_X_PX <= 0 || CARD_DRAG_CAP_UP_PX <= 0) return 1;
+    const tx = dx / CARD_DRAG_CAP_X_PX;
+    const ty = Math.max(0, -dy) / CARD_DRAG_CAP_UP_PX;
+    return clamp(Math.sqrt(tx * tx + ty * ty), 0, 1);
+  }
+  const tableBgEl = document.querySelector(".tableBg");
+  function edgeFracFromPointer(clientX, clientY) {
+    // 0..1: 0 means far from edge, 1 means at/over the edge of table background.
+    // This is used to force max damping when the mouse reaches the background edge.
+    if (!tableBgEl) return 0;
+    const r = tableBgEl.getBoundingClientRect();
+    const dx = Math.max(r.left - clientX, 0, clientX - r.right);
+    const dy = Math.max(r.top - clientY, 0, clientY - r.bottom);
+    // If pointer is outside, treat as edge (max damping).
+    if (dx > 0 || dy > 0) return 1;
+    const toLeft = clientX - r.left;
+    const toRight = r.right - clientX;
+    const toTop = clientY - r.top;
+    const toBottom = r.bottom - clientY;
+    const minDist = Math.max(0, Math.min(toLeft, toRight, toTop, toBottom));
+    const t = 1 - clamp(minDist / EDGE_DAMP_RADIUS_PX, 0, 1);
+    return t;
+  }
+  function setCardOffset(el, dx, dy) {
+    el.style.setProperty("--dx", `${dx}px`);
+    el.style.setProperty("--dy", `${dy}px`);
+  }
+  function setCardScale(el, s) {
+    el.style.setProperty("--s", `${s}`);
+  }
+  function easeOutPow(t, p) {
+    const x = clamp(t, 0, 1);
+    return 1 - Math.pow(1 - x, p);
+  }
+  function easeInPow(t, p) {
+    const x = clamp(t, 0, 1);
+    return Math.pow(x, p);
+  }
+  function combinedFrac(frac, edgeFrac) {
+    // Avoid "instant big -> small -> big" at drag start when the hand is physically near the table edge:
+    // only let edge-based damping contribute once the card is actually pulled out.
+    // Weight edge influence by pull fraction so it's ~0 near origin and increases smoothly.
+    const f = clamp(frac, 0, 1);
+    const e = clamp(edgeFrac, 0, 1);
+    const w = easeOutPow(f, 1.4); // 0 -> 1 as pull increases (out curve)
+    return Math.max(f, e * w);
+  }
+  function dampDriver(frac) {
+    // Gate the damping so it doesn't start too early:
+    // below DAMP_START_FRAC => 0, then ramps 0..1 afterwards.
+    const x = clamp(frac, 0, 1);
+    const t0 = clamp(DAMP_START_FRAC, 0, 0.95);
+    if (x <= t0) return 0;
+    return clamp((x - t0) / (1 - t0), 0, 1);
+  }
+
+  function stopSpring() {
+    if (springRaf) {
+      cancelAnimationFrame(springRaf);
+      springRaf = null;
+    }
+  }
+
+  function startSpringBack(el, x0, y0, vx0, vy0, s0) {
+    stopSpring();
+    if (!el) return;
+
+    // Hard spring snapback with landing bounce on impact
+    let x = x0;
+    let y = y0;
+    const VMAX = 1200; // px/s
+    let vx = clamp(vx0, -VMAX, VMAX) * 0.5;
+    let vy = clamp(vy0, -VMAX, VMAX) * 0.5;
+    let sStart = typeof s0 === "number" && Number.isFinite(s0) ? s0 : 1;
+    let tAcc = 0;
+    let last = performance.now();
+    const startDist = Math.max(1, Math.hypot(x0, y0));
+    const v0 = Math.hypot(vx, vy);
+
+    // Hard spring: high omega, critically damped
+    const omega = clamp(35 + startDist / 160, 35, 52); // rad/s - fast, hard spring
+    const zeta = clamp(1.0 + v0 / 18000, 0.98, 1.15); // critically damped
+    const k = omega * omega;
+    const c = 2 * zeta * omega;
+
+    el.classList.add("springing");
+    el.classList.remove("snapBack");
+    el.classList.remove("overshoot");
+
+    // Landing bounce parameters
+    const BOUNCE_COEF = 0.28; // coefficient of restitution (energy preserved on bounce)
+    const BOUNCE_GRAVITY = 4800; // px/s^2
+    const BOUNCE_MIN_VY = 60; // px/s - minimum velocity to trigger bounce
+
+    const step = (now) => {
+      let dt = clamp((now - last) / 1000, 0.001, 0.034);
+      last = now;
+      tAcc += dt;
+
+      // Semi-implicit Euler
+      const px = x;
+      const py = y;
+      const ax = -k * x - c * vx;
+      const ay = -k * y - c * vy;
+      vx += ax * dt;
+      vy += ay * dt;
+      x += vx * dt;
+      y += vy * dt;
+
+      // X-axis: hard stop at zero
+      if ((px > 0 && x <= 0) || (px < 0 && x >= 0)) {
+        x = 0;
+        vx = 0;
+      }
+
+      // Y-axis: detect landing and trigger bounce
+      if (py < 0 && y >= 0 && vy > 0) {
+        // Just crossed zero from above with downward velocity
+        const impactVy = Math.abs(vy);
+        x = 0;
+        y = 0;
+        vx = 0;
+        vy = 0;
+
+        // Start landing bounce if impact velocity is significant
+        if (impactVy >= BOUNCE_MIN_VY) {
+          const bounceVy = -impactVy * BOUNCE_COEF; // upward velocity after bounce
+          let by = 0;
+          let bvy = bounceVy;
+          let lastB = performance.now();
+
+          const bounceStep = (nowB) => {
+            const dtB = clamp((nowB - lastB) / 1000, 0.001, 0.034);
+            lastB = nowB;
+            bvy += BOUNCE_GRAVITY * dtB;
+            by += bvy * dtB;
+
+            // Bounce finished when back at ground moving downward
+            if (by >= 0 && bvy >= 0) {
+              setCardOffset(el, 0, 0);
+              setCardScale(el, 1);
+              el.classList.remove("springing");
+              springRaf = null;
+              return;
+            }
+
+            setCardOffset(el, 0, by);
+            setCardScale(el, 1);
+            springRaf = requestAnimationFrame(bounceStep);
+          };
+          springRaf = requestAnimationFrame(bounceStep);
+          return;
+        } else {
+          // Impact too soft, just stop
+          setCardOffset(el, 0, 0);
+          setCardScale(el, 1);
+          el.classList.remove("springing");
+          springRaf = null;
+          return;
+        }
+      }
+
+      setCardOffset(el, x, y);
+      // Scale follows ease-in curve (accelerating shrink)
+      const scaleT = clamp(1 - Math.exp(-8 * tAcc), 0, 1);
+      const s = 1 + (sStart - 1) * (1 - easeInPow(scaleT, 2.0));
+      setCardScale(el, s);
+
+      // Check if settled near origin with low velocity
+      const settled = Math.hypot(x, y) < 0.5 && Math.hypot(vx, vy) < 18;
+      if (settled) {
+        setCardOffset(el, 0, 0);
+        setCardScale(el, 1);
+        el.classList.remove("springing");
+        springRaf = null;
+        return;
+      }
+
+      springRaf = requestAnimationFrame(step);
+    };
+    springRaf = requestAnimationFrame(step);
+  }
+
+  bottomHandEl.addEventListener("pointerdown", (e) => {
+    if (isDealing) return;
+    if (e.button != null && e.button !== 0) return;
+    const target = e.target.closest(".faceCard");
+    if (!target) return;
+    cardPointerId = e.pointerId;
+    cardEl = target;
+    // Ensure snapback easing only applies on release (not during drag).
+    cardEl.classList.remove("snapBack");
+    cardEl.classList.remove("overshoot");
+    cardEl.classList.remove("springing");
+    stopSpring();
+    cardLastX = e.clientX;
+    cardLastY = e.clientY;
+    cardLastT = performance.now();
+    cardDx = 0;
+    cardDy = 0;
+    cardVx = 0;
+    cardVy = 0;
+    cardS = CARD_DRAG_SCALE_BASE;
+    cardDragged = false;
+    cardDownAt = Date.now();
+    cardLocked = false;
+    cardEl.classList.add("dragging");
+    setCardOffset(cardEl, 0, 0);
+    setCardScale(cardEl, cardS);
+    try { cardEl.setPointerCapture(cardPointerId); } catch { /* ignore */ }
+  });
+
+  bottomHandEl.addEventListener("pointermove", (e) => {
+    if (isDealing) return;
+    if (cardPointerId == null || e.pointerId !== cardPointerId) return;
+    if (!cardEl) return;
+    if (cardLocked) return;
+    const tNow = performance.now();
+    const dt = clamp((tNow - cardLastT) / 1000, 0.001, 0.05);
+    cardLastT = tNow;
+    const ddx0 = e.clientX - cardLastX;
+    const ddy0 = e.clientY - cardLastY;
+    cardLastX = e.clientX;
+    cardLastY = e.clientY;
+
+    const prevDx = cardDx;
+    const prevDy = cardDy;
+
+    const oldFrac = dragFrac(cardDx, cardDy);
+    const edgeFrac = edgeFracFromPointer(e.clientX, e.clientY);
+    const oldCombined = combinedFrac(oldFrac, edgeFrac);
+    const oldD = dampDriver(oldCombined);
+    // Target offset if perfectly following the pointer
+    let ddx = ddx0;
+    let ddy = ddy0;
+    let nextDx = cardDx + ddx;
+    let nextDy = cardDy + ddy;
+    // Apply "no downward" immediately for intent detection (downward movement shouldn't help push outward)
+    if (nextDy > 0) nextDy = 0;
+    let nextFrac = dragFrac(nextDx, nextDy);
+    const nextCombined = combinedFrac(nextFrac, edgeFrac);
+    const nextD = dampDriver(nextCombined);
+
+    // Damping: apply whenever we are NOT moving inward (i.e., not getting farther from caps).
+    // Joystick feel: resist radial (outward) motion much more than tangential (around-the-edge) motion.
+    // This prevents the "pause / straight line" feel when sliding left/right at a given height.
+    if (nextD >= oldD) {
+      // Combined damping driver: either card approaching its drag caps, OR pointer approaching table edge.
+      // When mouse reaches the table edge, edgeFrac -> 1 => strength -> 1 (max damping).
+      const strength = easeOutPow(oldD, CARD_DRAG_DAMP_P);
+      const radialGain = 1 - strength; // strongest resistance
+      // Tangential (left/right) should remain smooth, but when pulled upward "high enough",
+      // increase tangential damping so the arc stays small (avoid the "can draw a circle" feel).
+      let tanGain = 1 - strength * 0.35; // base tangential damping near edge
+
+      // Work in normalized ellipse-space so the boundary is a circle:
+      // vx = dx/CAP_X, vy = (-dy)/CAP_UP
+      const capX = CARD_DRAG_CAP_X_PX;
+      const capY = CARD_DRAG_CAP_UP_PX;
+      if (capX > 0 && capY > 0) {
+        const ux0 = cardDx / capX;
+        const uy0 = Math.max(0, -cardDy) / capY;
+        const un = Math.hypot(ux0, uy0);
+        if (un > 1e-4) {
+          const ux = ux0 / un;
+          const uy = uy0 / un;
+
+          // Height-dependent tangential damping:
+          // - below ~35% upward pull: almost unchanged
+          // - above that: tangential gets increasingly "sticky" so sliding left/right produces only a small arc
+          const upFrac = clamp(uy0, 0, 1); // 0..1 upward fraction
+          const tUp = clamp((upFrac - 0.35) / (1 - 0.35), 0, 1);
+          // Up to ~55% additional tangential damping at max upward pull.
+          tanGain *= 1 - 0.55 * tUp;
+
+          let dvx = ddx0 / capX;
+          let dvy = -ddy0 / capY;
+
+          // Decompose dv into radial/tangential components.
+          const dr = dvx * ux + dvy * uy;
+          const tvx = dvx - dr * ux;
+          const tvy = dvy - dr * uy;
+
+          // Only resist radial-outward component (dr > 0). Inward dr stays responsive.
+          const dr2 = dr > 0 ? dr * radialGain : dr;
+          dvx = dr2 * ux + tvx * tanGain;
+          dvy = dr2 * uy + tvy * tanGain;
+
+          ddx = dvx * capX;
+          ddy = -dvy * capY;
+        } else {
+          // Near origin: fall back to uniform damping.
+          const gain = 1 - strength;
+          ddx = ddx0 * gain;
+          ddy = ddy0 * gain;
+        }
+      } else {
+        const gain = 1 - strength;
+        ddx = ddx0 * gain;
+        ddy = ddy0 * gain;
+      }
+
+      nextDx = cardDx + ddx;
+      nextDy = cardDy + ddy;
+      if (nextDy > 0) nextDy = 0;
+      nextFrac = dragFrac(nextDx, nextDy);
+    }
+
+    // Clamp to a smooth arc (ellipse). Do NOT lock; keep motion continuous along the boundary (no "pause").
+    const proj = projectToDragRegion(nextDx, nextDy);
+    nextDx = proj.dx;
+    nextDy = proj.dy;
+
+    cardDx = nextDx;
+    cardDy = nextDy;
+
+    // Scale follows the same ease-out "damping strength" rhythm.
+    const curFrac = dragFrac(cardDx, cardDy);
+    const curCombined = combinedFrac(curFrac, edgeFrac);
+    const curD = dampDriver(curCombined);
+    const curStrength = easeOutPow(curD, CARD_DRAG_DAMP_P);
+    cardS = CARD_DRAG_SCALE_BASE + CARD_DRAG_SCALE_EXTRA * curStrength;
+
+    // Velocity estimate (for physical release). Smooth a bit to reduce noise.
+    const instVx = (cardDx - prevDx) / dt;
+    const instVy = (cardDy - prevDy) / dt;
+    cardVx = cardVx * 0.65 + instVx * 0.35;
+    cardVy = cardVy * 0.65 + instVy * 0.35;
+
+    if (!cardDragged) {
+      const moved = Math.hypot(cardDx, cardDy) > 6 && Date.now() - cardDownAt > 40;
+      if (moved) cardDragged = true;
+    }
+    setCardOffset(cardEl, cardDx, cardDy);
+    setCardScale(cardEl, cardS);
+  });
+
+  function endCardPointer(e) {
+    if (cardPointerId == null || e.pointerId !== cardPointerId) return;
+    const el = cardEl;
+    const lastDx = cardDx;
+    const lastDy = cardDy;
+    const lastVx = cardVx;
+    const lastVy = cardVy;
+    const lastS = cardS;
+    const dragDist = Math.hypot(lastDx, lastDy);
+    cardPointerId = null;
+    cardEl = null;
+
+    if (el) {
+      el.classList.remove("dragging");
+      // Only spring back if we actually dragged (or moved meaningfully).
+      const moved = Math.hypot(lastDx, lastDy) > 1.5 || cardDragged;
+      if (moved) {
+        startSpringBack(el, lastDx, lastDy, lastVx, lastVy, lastS);
+      } else {
+        // No movement: don't run spring animation (prevents "return then pop" on click).
+        setCardOffset(el, 0, 0);
+        setCardScale(el, 1);
+        el.classList.remove("springing");
+        el.classList.remove("overshoot");
+      }
+      try { el.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
+    }
+    // If it was a drag, suppress click selection.
+    if (cardDragged) suppressHandClickUntil = Date.now() + 220;
+
+    cardDragged = false;
+    cardLocked = false;
+    cardVx = 0;
+    cardVy = 0;
+    cardS = 1;
+  }
+  bottomHandEl.addEventListener("pointerup", endCardPointer);
+  bottomHandEl.addEventListener("pointercancel", endCardPointer);
+
+  // Click your cards to select (on table)
+  bottomHandEl.addEventListener("click", (e) => {
+    if (isDealing) return;
+    if (Date.now() < suppressHandClickUntil) return;
+    if (!game || game.gameOver) return;
+    const current = game.players[game.currentPlayerIndex];
+    if (!current || current.kind !== "human") return;
+    const c = e.target.closest(".faceCard");
+    if (!c) return;
+    const id = c.dataset.cardId;
+    if (!id) return;
+    markHumanAction();
+    if (selected.includes(id)) selected = selected.filter((x) => x !== id);
+    else selected = selected.length >= 2 ? [selected[1], id] : [...selected, id];
+    renderSelectionHighlights();
+    syncSelectionUi();
+  });
+
+  // UI image buttons
+  // Prevent image/element drag (fixes mobile/desktop "can drag" and hit-testing weirdness)
+  for (const el of [btnHintImg, btnMatchImg, btnEndTurnImg]) {
+    el.addEventListener("dragstart", (e) => e.preventDefault());
+    const img = el.querySelector("img");
+    if (img) img.addEventListener("dragstart", (e) => e.preventDefault());
+  }
+
+  // Prevent native HTML drag on card images (otherwise non-joker image cards may bypass our 50px lift cap).
+  bottomHandEl.addEventListener(
+    "dragstart",
+    (e) => {
+      const t = e.target;
+      if (t && t.closest && t.closest(".faceCard")) e.preventDefault();
+    },
+    { capture: true }
+  );
+
+  btnHintImg.addEventListener("click", () => {
+    if (isDealing) return;
+    if (!game || game.gameOver) return;
+    const current = game.players[game.currentPlayerIndex];
+    if (!current || current.kind !== "human") return;
+    markHumanAction();
+
+    // Toggle hint: if already showing hint (2 cards selected), clear them; otherwise show hint
+    if (selected.length === 2) {
+      // Check if the current selection is a valid pair (hint result)
+      const pair = window.Game.findAnyPairInHand(game.players[0].hand);
+      const isHintPair = pair &&
+        ((selected[0] === pair[0].id && selected[1] === pair[1].id) ||
+         (selected[0] === pair[1].id && selected[1] === pair[0].id));
+
+      if (isHintPair) {
+        // Clear hint: deselect cards and return them to original position
+        clearSelection();
+        return;
+      }
+    }
+
+    // Show hint: select the matching pair
+    maybeShowHint();
+  });
+
+  btnMatchImg.addEventListener("click", () => {
+    if (isDealing) return;
+    // same as "匹配出牌"
+    btnTryMatch.click();
+  });
+
+  btnEndTurnImg.addEventListener("click", () => {
+    if (isDealing) return;
+    btnEndTurn.click();
+  });
+
+  // Click upstream backs to draw
+  document.addEventListener("click", (e) => {
+    const b = e.target.closest(".seatHand[data-from-player-index]");
+    if (!b) return;
+    if (!game || game.gameOver) return;
+    const current = game.players[game.currentPlayerIndex];
+    if (current.kind !== "human") return;
+    const fromIdx = Number(b.dataset.fromPlayerIndex);
+    markHumanAction();
+
+    // 播放旋转动画
+    animateUpstreamRotateAndOpen(fromIdx, b);
+  });
+
+  btnTryMatch.addEventListener("click", () => {
+    if (!game || game.gameOver) return;
+    advancePastOutPlayers();
+    const current = game.players[game.currentPlayerIndex];
+    if (!current || current.out || current.kind !== "human") return;
+    if (selected.length !== 2) return;
+    markHumanAction();
+    const [a, b] = selected;
+
+    // Animate the two selected cards to discard pile if it matches.
+    const aEl = $("#pBottomHand").querySelector(`.faceCard[data-card-id="${CSS.escape(a)}"]`);
+    const bEl = $("#pBottomHand").querySelector(`.faceCard[data-card-id="${CSS.escape(b)}"]`);
+    const res = window.Game.tryDiscardPairByCardIds(game, 0, a, b);
+    if (res.ok) {
+      if (aEl) flyToDiscard(aEl);
+      if (bEl) flyToDiscard(bEl);
+      clearSelection();
+    }
+    renderAll(game, settings);
+    // If the human just went out, immediately pass the turn.
+    if (!game.gameOver && game.players[game.currentPlayerIndex]?.out) {
+      closeDrawOverlay();
+      window.Game.advanceTurn(game);
+      renderAll(game, settings);
+      runAiLoop(game, settings);
+    }
+  });
+
+  btnClearSelect.addEventListener("click", () => {
+    markHumanAction();
+    clearSelection();
+  });
+
+  btnEndTurn.addEventListener("click", () => {
+    if (!game || game.gameOver) return;
+    const current = game.players[game.currentPlayerIndex];
+    if (current.kind !== "human") return;
+    const upstreamIdx = window.Game.getUpstreamPlayerIndex(game);
+    const canDrawUpstream = window.Game.canDrawFrom(game, upstreamIdx);
+    if (!game.turnHasDrawn && canDrawUpstream) return;
+    markHumanAction();
+    clearSelection();
+    closeDrawOverlay();
+    window.Game.advanceTurn(game);
+    renderAll(game, settings);
+    runAiLoop(game, settings);
+  });
+
+  syncSettings();
+
+  // When AI advances and it becomes the human's turn, start the 8s timer baseline.
+  const _renderAll = renderAll;
+  renderAll = function patchedRenderAll(g, s) {
+    _renderAll(g, s);
+    if (!g) return;
+    if (g.gameOver) {
+      window.clearTimeout(hintT);
+      hintT = null;
+      window.clearTimeout(runAiLoop._t);
+      runAiLoop._t = null;
+      clearHintHighlight();
+
+      const loser = window.Game.findJokerHolder(g.players);
+      const youLose = loser && loser.id === g.players[0].id;
+      endTitle.textContent = youLose ? "你输了" : "你赢了";
+      endSubtitle.textContent = loser ? `${loser.name} 最后拿着 JOKER。` : "游戏结束。";
+      endOverlay.classList.remove("hidden");
+      return;
+    }
+    const pid = g.players[g.currentPlayerIndex]?.id || null;
+    if (pid !== lastTurnPlayerId) {
+      lastTurnPlayerId = pid;
+      if (g.players[g.currentPlayerIndex]?.kind === "human") {
+        markHumanAction();
+      } else {
+        // not human turn: stop hints
+        window.clearTimeout(hintT);
+        hintT = null;
+        clearHintHighlight();
+        // ensure AI loop always starts when it's AI's turn (prevents "stuck after end turn")
+        if (s.aiPaceMs < 1e6) {
+          try {
+            runAiLoop(g, s);
+          } catch {
+            // ignore
+          }
+        }
+      }
+    } else {
+      // same turn: if user is idle and we newly have a pair (e.g., after draw), ensure a timer exists
+      scheduleHintFromNow();
+    }
+  };
+}
+
+window.initUi = initUi;
+

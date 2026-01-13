@@ -77,24 +77,169 @@ function buildPlayers(playerCount) {
 
 function initialDeal(deck, playerCount, rand = Math.random) {
   const players = buildPlayers(playerCount);
-
   shuffleInPlace(deck, rand);
-  for (let i = 0; i < deck.length; i++) {
-    players[i % playerCount].hand.push(deck[i]);
+
+  const CARDS_PER_PLAYER = 12;
+  const A_CARDS_PER_PLAYER = 6;
+  const B_CARDS_PER_PLAYER = 6;
+
+  // 🆕 根据关卡决定发牌策略
+  const tracker = window.__GAME_ROUND_TRACKER__;
+  const currentLevel = tracker ? tracker.currentLevel : 1;
+
+  console.log(`[发牌调试] GAME_ROUND_TRACKER:`, tracker);
+  console.log(`[发牌调试] currentLevel = ${currentLevel}, 类型: ${typeof currentLevel}`);
+
+  let humanMatchablePairs, aiMatchablePairs;
+
+  // ============ 第1关：新手教学关 ============
+  if (currentLevel === 1) {
+    humanMatchablePairs = 6;  // 玩家12张全配对（6对全能消除）
+    aiMatchablePairs = 2 + Math.floor(rand() * 2);  // AI: 2-3对
+    console.log(`[第1关] 新手教学模式 - 玩家6对全能消除`);
+  }
+  // ============ 第2关：正常难度 ============
+  else if (currentLevel === 2) {
+    humanMatchablePairs = 3 + Math.floor(rand() * 3);  // 玩家: 3-5对可消除
+    aiMatchablePairs = 2 + Math.floor(rand() * 2);  // AI: 2-3对
+    console.log(`[第2关] 正常难度 - 玩家${humanMatchablePairs}对可消除（共6对牌）`);
+  }
+  // ============ 第3关：困难模式 ============
+  else if (currentLevel === 3) {
+    humanMatchablePairs = 3 + Math.floor(rand() * 3);  // 玩家: 3-5对可消除
+    aiMatchablePairs = 2 + Math.floor(rand() * 2);  // AI: 2-3对
+    console.log(`[第3关] 困难模式 - 玩家${humanMatchablePairs}对可消除（共6对牌）`);
+  }
+  // ============ 默认：使用第2关规则 ============
+  else {
+    humanMatchablePairs = 3 + Math.floor(rand() * 3);  // 3-5对可消除
+    aiMatchablePairs = 2 + Math.floor(rand() * 2);  // AI: 2-3对
+    console.log(`[第${currentLevel}关] 使用默认规则 - 玩家${humanMatchablePairs}对可消除（共6对牌）`);
   }
 
-  // Balance the human player's hand so A(动物) and B(文字) appear close to 1:1.
-  // This reduces difficulty while keeping overall randomness. Joker is excluded.
-  balanceHandSides(players, rand);
+  console.log(`[发牌] 第${currentLevel}关 - 玩家可配对:${humanMatchablePairs}对，AI可配对:${aiMatchablePairs}对`);
 
-  // Guarantee (when feasible) that the human can immediately discard at least 2 pairs:
-  // i.e. at least two pairIds where both A and B exist in the human hand.
-  ensureHumanHasAtLeastNPairs(players, 2, rand);
+  // 按 pairId 分组
+  const pairGroups = new Map();
+  for (const card of deck) {
+    if (!card.pairId) continue;
+    if (!pairGroups.has(card.pairId)) pairGroups.set(card.pairId, []);
+    pairGroups.get(card.pairId).push(card);
+  }
 
-  for (const p of players) p.out = p.hand.length === 0;
+  const allPairIds = Array.from(pairGroups.keys());
+  shuffleInPlace(allPairIds, rand);
+
+  // 🚨 关键修复：追踪每张卡是否已被使用（不是追踪pairId）
+  const usedCards = new Set();  // 存储已发出的卡牌ID
+  const playerHasPairId = players.map(() => new Set());  // 每个玩家已有的pairId
+
+  for (let p = 0; p < playerCount; p++) {
+    const targetMatchablePairs = p === 0 ? humanMatchablePairs : aiMatchablePairs;
+
+    // 1. 先发可配对的完整对
+    let dealtPairs = 0;
+    for (const pairId of allPairIds) {
+      if (dealtPairs >= targetMatchablePairs) break;
+
+      const cards = pairGroups.get(pairId);
+      const availableA = cards.find(c => c.side === 'A' && !usedCards.has(c.id));
+      const availableB = cards.find(c => c.side === 'B' && !usedCards.has(c.id));
+
+      if (availableA && availableB) {
+        players[p].hand.push(availableA, availableB);
+        usedCards.add(availableA.id);
+        usedCards.add(availableB.id);
+        playerHasPairId[p].add(pairId);  // 记录玩家已有的pairId
+        dealtPairs++;
+      }
+    }
+
+    // 2. 补充A卡到6张（🚨 避免玩家已有该pairId）
+    const currentA = players[p].hand.filter(c => c.side === 'A').length;
+    const needA = A_CARDS_PER_PLAYER - currentA;
+    let addedA = 0;
+
+    for (const pairId of allPairIds) {
+      if (addedA >= needA) break;
+      if (playerHasPairId[p].has(pairId)) continue;  // 🚨 跳过玩家已有的pairId
+      const cards = pairGroups.get(pairId);
+      const availableA = cards.find(c => c.side === 'A' && !usedCards.has(c.id));
+      if (availableA) {
+        players[p].hand.push(availableA);
+        usedCards.add(availableA.id);
+        playerHasPairId[p].add(pairId);  // 记录pairId
+        addedA++;
+      }
+    }
+
+    // 3. 补充B卡到6张（🚨 避免玩家已有该pairId）
+    const currentB = players[p].hand.filter(c => c.side === 'B').length;
+    const needB = B_CARDS_PER_PLAYER - currentB;
+    let addedB = 0;
+
+    for (const pairId of allPairIds) {
+      if (addedB >= needB) break;
+      if (playerHasPairId[p].has(pairId)) continue;  // 🚨 跳过玩家已有的pairId
+      const cards = pairGroups.get(pairId);
+      const availableB = cards.find(c => c.side === 'B' && !usedCards.has(c.id));
+      if (availableB) {
+        players[p].hand.push(availableB);
+        usedCards.add(availableB.id);
+        playerHasPairId[p].add(pairId);  // 记录pairId
+        addedB++;
+      }
+    }
+
+    console.log(`[发牌] ${players[p].name}: ${players[p].hand.length}张 (A:${players[p].hand.filter(c=>c.side==='A').length} B:${players[p].hand.filter(c=>c.side==='B').length})，目标可消除:${targetMatchablePairs}对`);
+  }
+
+  // 验证：检查是否有重复卡牌
+  console.log("=== 发牌结果检查 ===");
+  for (let p = 0; p < playerCount; p++) {
+    const aCount = players[p].hand.filter(c => c.side === 'A').length;
+    const bCount = players[p].hand.filter(c => c.side === 'B').length;
+    const total = players[p].hand.length;
+
+    // 检查重复卡牌
+    const cardIds = new Set();
+    const duplicates = [];
+    players[p].hand.forEach(c => {
+      if (cardIds.has(c.id)) {
+        duplicates.push(c.id);
+      }
+      cardIds.add(c.id);
+    });
+
+    // 统计可配对数
+    const pairIdCount = new Map();
+    players[p].hand.forEach(c => {
+      if (!pairIdCount.has(c.pairId)) pairIdCount.set(c.pairId, { A: 0, B: 0 });
+      pairIdCount.get(c.pairId)[c.side]++;
+    });
+    let actualPairs = 0;
+    for (const [pairId, count] of pairIdCount.entries()) {
+      if (count.A > 0 && count.B > 0) actualPairs++;
+    }
+
+    const dupStatus = duplicates.length > 0 ? `❌ 重复:${duplicates.join(',')}` : '✓';
+    console.log(`${players[p].name}: ${total}张 (A:${aCount} B:${bCount}) 实际可配对:${actualPairs}对 ${dupStatus}`);
+  }
+  console.log("==================");
+
+  // 打乱手牌
+  for (const p of players) {
+    shuffleInPlace(p.hand, rand);
+  }
+
+  for (const p of players) {
+    p.out = p.hand.length === 0;
+  }
 
   return players;
 }
+
+
 
 function countSidesInHand(hand) {
   let a = 0;
@@ -511,11 +656,29 @@ function findJokerHolder(players) {
 function dealPendingJokerToPlayer(game, playerIndex) {
   if (!game || game.gameOver) return game;
   if (!game.jokerPending) return game;
-  const p = game.players[playerIndex];
+
+  const tracker = window.__GAME_ROUND_TRACKER__;
+  const currentLevel = tracker ? tracker.currentLevel : 1;
+  let targetIdx = playerIndex;
+
+  // ============ 第1关：Joker保护 ============
+  if (currentLevel === 1 && playerIndex === 0) {
+    // 第1关：Joker不发给玩家，改为随机发给AI
+    const aiIndices = [1, 2, 3];
+    targetIdx = aiIndices[Math.floor(Math.random() * aiIndices.length)];
+    console.log(`[第1关] Joker保护：不发给玩家，改为发给 ${game.players[targetIdx].name}`);
+  }
+  // ============ 第2关及以后：Joker正常发牌 ============
+  else {
+    // 第2/3关：Joker可以发给任何人（包括玩家）
+    console.log(`[第${currentLevel}关] Joker正常发牌给 ${game.players[targetIdx].name}`);
+  }
+
+  const p = game.players[targetIdx];
   if (!p) return game;
   p.hand.push(game.jokerPending);
   p.out = p.hand.length === 0;
-  game.lastEvent = { type: "joker_deal", playerId: p.id, playerIndex };
+  game.lastEvent = { type: "joker_deal", playerId: p.id, playerIndex: targetIdx };
   game.jokerPending = null;
   return game;
 }
@@ -523,10 +686,8 @@ function dealPendingJokerToPlayer(game, playerIndex) {
 function createGame({ pairs, playerCount, seed = "" }) {
   const rand = seed ? createRng(seed) : Math.random;
   const { joker, rest } = extractJoker(buildDeckFromImagePairs(pairs));
-  const players =
-    playerCount === 4 && Array.isArray(pairs) && pairs.length === 22
-      ? dealConstrained22Pairs(pairs, playerCount, rand)
-      : initialDeal(rest, playerCount, rand);
+  // 🚨 统一使用 initialDeal，不再使用 dealConstrained22Pairs
+  const players = initialDeal(rest, playerCount, rand);
 
   // Choose first non-out player; if all out (unlikely), pick 0.
   let currentPlayerIndex = players.findIndex((p) => !p.out);
@@ -541,6 +702,7 @@ function createGame({ pairs, playerCount, seed = "" }) {
     discardPile: [],
     turnHasDrawn: false,
     jokerPending: joker,
+    humanDrawAttempts: 0,  // 🚨 修复：初始化概率追踪器（第2关及以后使用）
   };
 
   return game;
@@ -667,6 +829,16 @@ function findAnyPairInHand(hand) {
 
 function advanceTurn(game) {
   if (game.gameOver) return game;
+
+  // 检查玩家是否已结束手牌
+  const humanPlayer = game.players[0];
+  if (humanPlayer && humanPlayer.hand.length === 0) {
+    game.gameOver = true;
+    game.winnerText = "🎉 恭喜你获胜！手牌全部出完！";
+    game.winner = humanPlayer;
+    return game;
+  }
+
   const nextIdx = nextActivePlayerIndex(game.players, game.currentPlayerIndex);
   if (nextIdx < 0) {
     game.gameOver = true;
@@ -677,6 +849,43 @@ function advanceTurn(game) {
   game.turnHasDrawn = false;
   game.lastEvent = { type: "turn", currentPlayerId: game.players[nextIdx].id };
   return game;
+}
+
+// AI完全随机抽牌
+function getAiDrawIndex(game, aiPlayerIdx, targetPlayerIdx) {
+  if (!game || game.gameOver) return -1;
+  const target = game.players[targetPlayerIdx];
+  if (!target || target.out || target.hand.length === 0) return -1;
+  return Math.floor(Math.random() * target.hand.length);
+}
+
+// AI抽牌延迟（根据手牌数量）- 减半版
+function getAiDrawDelay(game, aiPlayerIdx) {
+  const ai = game.players[aiPlayerIdx];
+  if (!ai || ai.hand.length === 0) return 500;
+
+  if (ai.hand.length === 1) return 400 + Math.random() * 300;  // 0.4-0.7s
+  if (ai.hand.length <= 3) return 500 + Math.random() * 400;  // 0.5-0.9s
+  return 1000 + Math.random() * 600;  // 1.0-1.6s
+}
+
+// 检查玩家AB卡平衡（调试用）
+function checkAllPlayersBalance(game) {
+  console.log("======================");
+  console.log("所有玩家 A/B 平衡检查:");
+  for (let i = 0; i < game.players.length; i++) {
+    const p = game.players[i];
+    let aCount = 0, bCount = 0;
+    for (const c of p.hand) {
+      if (!c || c.type === "joker" || !c.side) continue;
+      if (c.side === "A") aCount++;
+      else if (c.side === "B") bCount++;
+    }
+    const diff = aCount - bCount;
+    const status = Math.abs(diff) <= 1 ? "✅" : "❌";
+    console.log(`${status} ${p.name}: A=${aCount} B=${bCount} 差异=${diff} (手牌${p.hand.length}张)`);
+  }
+  console.log("======================");
 }
 
 // Expose API on window for non-module usage.
@@ -701,5 +910,8 @@ window.Game = {
   tryDiscardPairByCardIds,
   findAnyPairInHand,
   advanceTurn,
+  getAiDrawIndex,
+  getAiDrawDelay,
+  checkAllPlayersBalance,
 };
 

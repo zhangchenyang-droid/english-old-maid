@@ -1,0 +1,806 @@
+/* Core game logic (no DOM). No ES modules so file:// works. */
+
+function createRng(seedString = "") {
+  // Mulberry32 PRNG from string seed (deterministic shuffles if needed).
+  let h = 1779033703 ^ seedString.length;
+  for (let i = 0; i < seedString.length; i++) {
+    h = Math.imul(h ^ seedString.charCodeAt(i), 3432918353);
+    h = (h << 13) | (h >>> 19);
+  }
+  let a = (h >>> 0) || 1;
+  return function rand() {
+    a |= 0;
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function shuffleInPlace(arr, rand = Math.random) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+function buildDeckFromImagePairs(pairs) {
+  const deck = [];
+  for (const p of pairs) {
+    const pairId = p.key;
+    deck.push({
+      id: `${pairId}_A`,
+      type: "img",
+      pairId,
+      side: "A",
+      imgSrc: p.A,
+    });
+    deck.push({
+      id: `${pairId}_B`,
+      type: "img",
+      pairId,
+      side: "B",
+      imgSrc: p.B,
+    });
+  }
+  // One unmatchable joker card (Old Maid)
+  deck.push({
+    id: "joker",
+    type: "joker",
+    pairId: null,
+    side: null,
+  });
+  return deck;
+}
+
+function extractJoker(deck) {
+  let joker = null;
+  const rest = [];
+  for (const c of deck) {
+    if (c && c.type === "joker" && !joker) joker = c;
+    else rest.push(c);
+  }
+  if (!joker) joker = { id: "joker", type: "joker", pairId: null, side: null };
+  return { joker, rest };
+}
+
+// ========== 🆕 虚拟AI手牌系统 - 辅助函数 ==========
+
+// 获取所有可用的 pairId 列表
+// ========== 核心游戏函数 ==========
+
+function buildPlayers(playerCount) {
+  return Array.from({ length: playerCount }).map((_, i) => ({
+    id: `p${i + 1}`,
+    name: i === 0 ? "你" : `AI${i}`,
+    kind: i === 0 ? "human" : "ai",
+    hand: [],
+    out: false,
+  }));
+}
+
+// 完全重写的 initialDeal 函数
+
+function initialDeal(deck, playerCount, rand = Math.random) {
+  const players = buildPlayers(playerCount);
+  shuffleInPlace(deck, rand);
+
+  const CARDS_PER_PLAYER = 12;
+  const A_CARDS_PER_PLAYER = 6;
+  const B_CARDS_PER_PLAYER = 6;
+
+  const humanMatchablePairs = 2 + Math.floor(rand() * 3);
+  const aiMatchablePairs = humanMatchablePairs - 1;
+
+  console.log(`[发牌] 玩家可配对:${humanMatchablePairs}对，AI可配对:${aiMatchablePairs}对`);
+
+  const pairGroups = new Map();
+  for (const card of deck) {
+    if (!card.pairId) continue;
+    if (!pairGroups.has(card.pairId)) pairGroups.set(card.pairId, []);
+    pairGroups.get(card.pairId).push(card);
+  }
+
+  const allPairIds = Array.from(pairGroups.keys());
+  shuffleInPlace(allPairIds, rand);
+
+  const playerHas = players.map(() => new Set());
+
+  for (let p = 0; p < playerCount; p++) {
+    const targetMatchablePairs = p === 0 ? humanMatchablePairs : aiMatchablePairs;
+    const matchablePairIds = [];
+
+    for (const pairId of allPairIds) {
+      if (matchablePairIds.length >= targetMatchablePairs) break;
+      let alreadyUsed = false;
+      for (let otherP = 0; otherP < p; otherP++) {
+        if (playerHas[otherP].has(pairId)) {
+          alreadyUsed = true;
+          break;
+        }
+      }
+      if (!alreadyUsed) {
+        matchablePairIds.push(pairId);
+        playerHas[p].add(pairId);
+      }
+    }
+
+    for (const pairId of matchablePairIds) {
+      const cards = pairGroups.get(pairId);
+      const cardA = cards.find(c => c.side === 'A');
+      const cardB = cards.find(c => c.side === 'B');
+      if (cardA && cardB) players[p].hand.push(cardA, cardB);
+    }
+
+    const currentA = players[p].hand.filter(c => c.side === 'A').length;
+    const currentB = players[p].hand.filter(c => c.side === 'B').length;
+    const needA = A_CARDS_PER_PLAYER - currentA;
+    const needB = B_CARDS_PER_PLAYER - currentB;
+
+    let addedA = 0;
+    for (const pairId of allPairIds) {
+      if (addedA >= needA) break;
+      if (playerHas[p].has(pairId)) continue;
+      const cards = pairGroups.get(pairId);
+      const cardA = cards.find(c => c.side === 'A');
+      if (cardA) {
+        players[p].hand.push(cardA);
+        playerHas[p].add(pairId);
+        addedA++;
+      }
+    }
+
+    let addedB = 0;
+    for (const pairId of allPairIds) {
+      if (addedB >= needB) break;
+      if (playerHas[p].has(pairId)) continue;
+      const cards = pairGroups.get(pairId);
+      const cardB = cards.find(c => c.side === 'B');
+      if (cardB) {
+        players[p].hand.push(cardB);
+        playerHas[p].add(pairId);
+        addedB++;
+      }
+    }
+
+    console.log(`[发牌] ${players[p].name}: ${players[p].hand.length}张 (A:${players[p].hand.filter(c=>c.side==='A').length} B:${players[p].hand.filter(c=>c.side==='B').length})，目标可消除:${targetMatchablePairs}对`);
+  }
+
+  console.log("=== 发牌结果检查 ===");
+  for (let p = 0; p < playerCount; p++) {
+    const aCount = players[p].hand.filter(c => c.side === 'A').length;
+    const bCount = players[p].hand.filter(c => c.side === 'B').length;
+    const total = players[p].hand.length;
+
+    const pairIdCount = new Map();
+    players[p].hand.forEach(c => {
+      if (!pairIdCount.has(c.pairId)) pairIdCount.set(c.pairId, { A: 0, B: 0 });
+      pairIdCount.get(c.pairId)[c.side]++;
+    });
+    let actualPairs = 0;
+    for (const [pairId, count] of pairIdCount.entries()) {
+      if (count.A > 0 && count.B > 0) actualPairs++;
+    }
+
+    console.log(`${players[p].name}: ${total}张 (A:${aCount} B:${bCount}) 实际可配对:${actualPairs}对 ${total === 12 ? '✓' : '❌'}`);
+  }
+  console.log("==================");
+
+  for (const p of players) {
+    shuffleInPlace(p.hand, rand);
+  }
+
+  for (const p of players) {
+    p.out = p.hand.length === 0;
+  }
+
+  return players;
+}
+
+function countSidesInHand(hand) {
+  let a = 0;
+  let b = 0;
+  for (const c of hand) {
+    if (!c || c.type === "joker" || !c.side) continue;
+    if (c.side === "A") a++;
+    else if (c.side === "B") b++;
+  }
+  return { a, b };
+}
+
+  function pickHumanPairsCount() {
+    // roundMode 0: 第一把 - 2到3对起手（降低优势）
+    if (roundMode === 0) {
+      return rand() < 0.6 ? 2 : 3; // 60%概率2对，40%概率3对
+    }
+    // roundMode 1: 第二把 - 1到2对起手（更有挑战）
+    if (roundMode === 1) {
+      return rand() < 0.5 ? 1 : 2; // 50%概率1对，50%概率2对
+    }
+    // roundMode 2: 第三把 - 正常随机分布
+    const r = rand();
+    // 新概率：2对(10%), 3对(20%), 4对(50%), 5对(15%), 6对全消(5%)
+    if (r < 0.05) return 6; // 5% 全消
+    if (r < 0.10) return 2; // 5% (累积10%)
+    if (r < 0.30) return 3; // 20% (累积30%)
+    if (r < 0.45) return 5; // 15% (累积45%)
+    return 4; // 55% (剩余)
+  }
+
+  // AI配对数已废弃，AI通过随机发牌自然形成配对（不再人为控制）
+
+  const humanPairsTarget = pickHumanPairsCount();
+  const humanSingles = targetNonJoker[humanIdx] - humanPairsTarget * 2; // 0,4,6,8
+  if (humanSingles < 0 || humanSingles % 2 !== 0) {
+    throw new Error("Invalid human pair distribution.");
+  }
+
+  // Human gets exactly N full pairs.
+  for (let k = 0; k < humanPairsTarget; k++) {
+    const next = pairObjs.pop();
+    if (!next) throw new Error("Not enough pairs for human full pairs.");
+    players[humanIdx].hand.push(next.A, next.B);
+  }
+
+  // Human fills the rest with singles: keep A:B == 1:1 and ensure these singles never form a complete pair.
+  const singlesHalf = humanSingles / 2;
+  const looseA = [];
+  const looseB = [];
+  for (let k = 0; k < singlesHalf; k++) {
+    const next = pairObjs.pop();
+    if (!next) throw new Error("Not enough pairs for human singles.");
+    players[humanIdx].hand.push(next.A);
+    looseB.push(next.B);
+  }
+  for (let k = 0; k < singlesHalf; k++) {
+    const next = pairObjs.pop();
+    if (!next) throw new Error("Not enough pairs for human singles.");
+    players[humanIdx].hand.push(next.B);
+    looseA.push(next.A);
+  }
+
+  // Build side pools for the remaining cards (including leftovers from split pairs).
+  const poolA = looseA.slice();
+  const poolB = looseB.slice();
+  for (const p of pairObjs) {
+    poolA.push(p.A);
+    poolB.push(p.B);
+  }
+  shuffleInPlace(poolA, rand);
+  shuffleInPlace(poolB, rand);
+
+  // Deal to AIs by side counts (keeps A:B=1:1 automatically).
+  // We'll deal first, then apply pair formation logic after.
+  for (const pi of [ai12, ai10a, ai10b]) {
+    const half = targetNonJoker[pi] / 2;
+    for (let k = 0; k < half; k++) {
+      const c = poolA.pop();
+      if (!c) throw new Error("PoolA exhausted.");
+      players[pi].hand.push(c);
+    }
+    for (let k = 0; k < half; k++) {
+      const c = poolB.pop();
+      if (!c) throw new Error("PoolB exhausted.");
+      players[pi].hand.push(c);
+    }
+  }
+
+  // Post-deal: for roundMode 0/1, AI players already have random distribution
+  // The initial random deal already gives AIs varied pair counts naturally
+  // We don't need extra manipulation - just accept what was dealt
+
+  // Shuffle each hand for randomness and sanity-check.
+  for (let pi = 0; pi < playerCount; pi++) {
+    shuffleInPlace(players[pi].hand, rand);
+    players[pi].out = players[pi].hand.length === 0;
+    const nonJoker = players[pi].hand.filter((c) => c.type !== "joker");
+    const { a, b } = countSidesInHand(nonJoker);
+    if (a !== b) throw new Error("Constrained deal failed: A/B not 1:1.");
+  }
+
+  // Sanity: human complete pairs should match target (allow some variance for balance)
+  const actualHumanPairs = countCompletePairsInHand(players[humanIdx].hand);
+  if (Math.abs(actualHumanPairs - humanPairsTarget) > 1) {
+    throw new Error(`Constrained deal: human pairs mismatch (expected ${humanPairsTarget}, got ${actualHumanPairs}).`);
+  }
+
+  return players;
+}
+
+// ❌ 已删除：balanceHandSides() - AI虚拟化后不需要平衡机制
+
+// ❌ 已删除：rebalanceSinglePlayer() - AI虚拟化后不需要平衡机制
+
+function countCompletePairsInHand(hand) {
+  const byKey = new Map(); // pairId -> {A:boolean,B:boolean}
+  for (const c of hand) {
+    if (!c || !c.pairId || c.type === "joker") continue;
+    if (!byKey.has(c.pairId)) byKey.set(c.pairId, { A: false, B: false });
+    const s = byKey.get(c.pairId);
+    if (c.side === "A") s.A = true;
+    if (c.side === "B") s.B = true;
+  }
+  let count = 0;
+  for (const s of byKey.values()) if (s.A && s.B) count++;
+  return count;
+}
+
+// ❌ 已删除：ensureHumanHasAtLeastNPairs() - AI虚拟化后不需要保证起手配对数
+
+function discardAllPairsInPlace(hand) {
+  const byPair = new Map();
+  for (let i = 0; i < hand.length; i++) {
+    const c = hand[i];
+    if (!c.pairId) continue;
+    if (!byPair.has(c.pairId)) byPair.set(c.pairId, []);
+    byPair.get(c.pairId).push(i);
+  }
+
+  // Remove pairs; each pairId has at most 2 cards globally, but be safe.
+  const indicesToRemove = [];
+  for (const [pairId, idxs] of byPair.entries()) {
+    if (idxs.length >= 2) {
+      // remove in pairs of 2
+      for (let k = 0; k + 1 < idxs.length; k += 2) {
+        indicesToRemove.push(idxs[k], idxs[k + 1]);
+      }
+    }
+  }
+  if (indicesToRemove.length === 0) return [];
+
+  indicesToRemove.sort((a, b) => b - a);
+  const removed = [];
+  for (const idx of indicesToRemove) {
+    removed.push(hand.splice(idx, 1)[0]);
+  }
+  return removed;
+}
+
+function findMatchIndex(hand, pairId) {
+  if (!pairId) return -1;
+  for (let i = 0; i < hand.length; i++) {
+    if (hand[i].pairId === pairId) return i;
+  }
+  return -1;
+}
+
+function nextActivePlayerIndex(players, startIdx) {
+  const n = players.length;
+  for (let step = 1; step <= n; step++) {
+    const idx = (startIdx + step) % n;
+    if (!players[idx].out) return idx;
+  }
+  return -1;
+}
+
+function prevActivePlayerIndex(players, startIdx) {
+  const n = players.length;
+  for (let step = 1; step <= n; step++) {
+    const idx = (startIdx - step + n) % n;
+    if (!players[idx].out) return idx;
+  }
+  return -1;
+}
+
+function countNonJokerCards(players) {
+  let c = 0;
+  for (const p of players) {
+    for (const card of p.hand) if (card.type !== "joker") c++;
+  }
+  return c;
+}
+
+function findJokerHolder(players) {
+  for (const p of players) {
+    if (p.hand.some((c) => c.type === "joker")) return p;
+  }
+  return null;
+}
+
+function dealPendingJokerToPlayer(game, playerIndex) {
+  if (!game || game.gameOver) return game;
+  if (!game.jokerPending) return game;
+  const p = game.players[playerIndex];
+  if (!p) return game;
+  p.hand.push(game.jokerPending);
+  p.out = p.hand.length === 0;
+  game.lastEvent = { type: "joker_deal", playerId: p.id, playerIndex };
+  game.jokerPending = null;
+  return game;
+}
+
+// 全局游戏局数追踪（循环：第1把必赢，第2把差一张赢，第3把搞笑王卡循环）
+if (!window.__GAME_ROUND_TRACKER__) {
+  window.__GAME_ROUND_TRACKER__ = {
+    currentLevel: 1, // 当前关卡：1=第一关, 2=第二关, 3=第三关
+    roundNumber: 0,  // 内部使用：0=第一把(必赢), 1=第二把(差一张), 2=第三把(搞笑)
+  };
+}
+
+function createGame({ pairs, playerCount, seed = "" }) {
+  const rand = seed ? createRng(seed) : Math.random;
+  const { joker, rest } = extractJoker(buildDeckFromImagePairs(pairs));
+
+  // 使用简单随机发牌（删除所有特殊策划逻辑）
+  const players = initialDeal(rest, playerCount, rand);
+
+  // Choose first non-out player; if all out (unlikely), pick 0.
+  let currentPlayerIndex = players.findIndex((p) => !p.out);
+  if (currentPlayerIndex < 0) currentPlayerIndex = 0;
+
+  const roundMode = window.__GAME_ROUND_TRACKER__.roundNumber % 3;
+
+  const game = {
+    players,
+    currentPlayerIndex,
+    lastEvent: null,
+    gameOver: false,
+    winnerText: null,
+    discardPile: [],
+    turnHasDrawn: false,
+    jokerPending: joker,  // 暂时保留，稍后删除
+    humanDrawAttempts: 0,  // 🆕 玩家连续未匹配次数（0/1/2+）
+    roundMode,
+  };
+
+  // 递增局数
+  window.__GAME_ROUND_TRACKER__.roundNumber++;
+
+  return game;
+}
+
+function getNextPlayerIndex(game) {
+  return nextActivePlayerIndex(game.players, game.currentPlayerIndex);
+}
+
+function getUpstreamPlayerIndex(game) {
+  // 上家：回合顺序中的前一位（逆时针）
+  return prevActivePlayerIndex(game.players, game.currentPlayerIndex);
+}
+
+function canDrawFrom(game, targetPlayerIndex) {
+  const target = game.players[targetPlayerIndex];
+  return target && !target.out && target.hand.length > 0;
+}
+
+function drawCard(game, targetPlayerIndex, cardIndexInTargetHand) {
+  if (game.gameOver) return game;
+
+  const current = game.players[game.currentPlayerIndex];
+  const target = game.players[targetPlayerIndex];
+  if (!current || current.out) throw new Error("Current player is out.");
+  if (!target || target.out) throw new Error("Target player is out.");
+  if (target.hand.length === 0) throw new Error("Target has no cards.");
+  if (
+    cardIndexInTargetHand < 0 ||
+    cardIndexInTargetHand >= target.hand.length
+  ) {
+    throw new Error("Invalid card index.");
+  }
+
+  const drawn = target.hand.splice(cardIndexInTargetHand, 1)[0];
+  current.hand.push(drawn);
+  game.turnHasDrawn = true;
+
+  const hasPotentialMatch =
+    !!drawn.pairId &&
+    current.hand.some((c) => c !== drawn && c.pairId === drawn.pairId);
+
+  // 更新人类玩家的连续未匹配计数器（概率匹配机器将在UI层使用此数据）
+  if (current.kind === "human") {
+    game.humanFirstDrawInGame = false;
+    if (hasPotentialMatch) {
+      game.humanConsecutiveNoMatch = 0;
+    } else {
+      game.humanConsecutiveNoMatch++;
+    }
+  }
+
+  // Update out flags
+  current.out = current.hand.length === 0;
+  target.out = target.hand.length === 0;
+
+  // End condition: no non-joker cards remain
+  if (countNonJokerCards(game.players) === 0) {
+    game.gameOver = true;
+    const loser = findJokerHolder(game.players);
+    const currentLevel = window.__GAME_ROUND_TRACKER__.currentLevel;
+
+    if (loser && loser.kind === "human") {
+      game.winnerText = `第${currentLevel}关失败：你手里留着"王八牌"！`;
+      game.levelResult = "lose";
+    } else {
+      game.winnerText = `🎉 第${currentLevel}关通过！`;
+      game.levelResult = "win";
+    }
+  }
+
+  game.lastEvent = {
+    type: "draw",
+    currentPlayerId: current.id,
+    targetPlayerId: target.id,
+    drawn,
+    hasPotentialMatch,
+  };
+
+  return game;
+}
+
+function tryDiscardPairByCardIds(game, playerIndex, cardIdA, cardIdB) {
+  if (game.gameOver) return { ok: false, reason: "game_over" };
+  const player = game.players[playerIndex];
+  if (!player || player.out) return { ok: false, reason: "player_out" };
+  if (cardIdA === cardIdB) return { ok: false, reason: "same_card" };
+
+  const a = player.hand.find((c) => c.id === cardIdA);
+  const b = player.hand.find((c) => c.id === cardIdB);
+  if (!a || !b) return { ok: false, reason: "not_found" };
+  if (!a.pairId || !b.pairId) return { ok: false, reason: "joker_or_invalid" };
+  if (a.pairId !== b.pairId) {
+    game.lastEvent = { type: "mismatch", playerId: player.id, cardIds: [cardIdA, cardIdB] };
+    return { ok: false, reason: "mismatch" };
+  }
+  // Must be A <-> B
+  if (!a.side || !b.side || a.side === b.side) {
+    game.lastEvent = { type: "mismatch", playerId: player.id, cardIds: [cardIdA, cardIdB] };
+    return { ok: false, reason: "same_side" };
+  }
+
+  // Remove cards
+  const removed = [];
+  for (const cid of [cardIdA, cardIdB]) {
+    const idx = player.hand.findIndex((c) => c.id === cid);
+    if (idx >= 0) removed.push(player.hand.splice(idx, 1)[0]);
+  }
+  game.discardPile.push(...removed);
+
+  const wasOut = player.out;
+  player.out = player.hand.length === 0;
+
+  const pairId = a.pairId;
+  game.lastEvent = { type: "discard_pair", playerId: player.id, pairId, cards: removed };
+
+  // 🔄 重置死循环计数器（出牌=有进展）
+  game.noProgressTurns = 0;
+
+  if (countNonJokerCards(game.players) === 0) {
+    game.gameOver = true;
+    const loser = findJokerHolder(game.players);
+    const currentLevel = window.__GAME_ROUND_TRACKER__.currentLevel;
+
+    if (loser && loser.kind === "human") {
+      game.winnerText = `第${currentLevel}关失败：你手里留着"王八牌"！`;
+      game.levelResult = "lose";
+    } else {
+      game.winnerText = `🎉 第${currentLevel}关通过！`;
+      game.levelResult = "win";
+    }
+  }
+
+  return { ok: true };
+}
+
+function findAnyPairInHand(hand) {
+  const byKey = new Map(); // pairId -> {A?,B?}
+  for (const c of hand) {
+    if (!c.pairId) continue;
+    if (!byKey.has(c.pairId)) byKey.set(c.pairId, { A: null, B: null });
+    const slot = byKey.get(c.pairId);
+    if (c.side === "A") slot.A = c;
+    if (c.side === "B") slot.B = c;
+  }
+  for (const slot of byKey.values()) {
+    if (slot.A && slot.B) return [slot.A, slot.B];
+  }
+  return null;
+}
+
+function advanceTurn(game) {
+  if (game.gameOver) return game;
+
+  // 🆕 检查玩家是否出完牌（立即结束游戏）
+  const humanPlayer = game.players[0];
+  if (humanPlayer && humanPlayer.hand.length === 0) {
+    game.gameOver = true;
+    game.winnerText = "🎉 恭喜你获胜！手牌全部出完！";
+    game.winner = humanPlayer;
+    return game;
+  }
+
+  const nextIdx = nextActivePlayerIndex(game.players, game.currentPlayerIndex);
+  if (nextIdx < 0) {
+    game.gameOver = true;
+    game.winnerText = "游戏结束";
+    return game;
+  }
+  game.currentPlayerIndex = nextIdx;
+  game.turnHasDrawn = false;
+  game.lastEvent = { type: "turn", currentPlayerId: game.players[nextIdx].id };
+  return game;
+}
+
+// 计算手牌的A/B侧数量差异
+function getHandSideImbalance(hand) {
+  let aCount = 0;
+  let bCount = 0;
+  for (const c of hand) {
+    if (!c || c.type === "joker" || !c.side) continue;
+    if (c.side === "A") aCount++;
+    else if (c.side === "B") bCount++;
+  }
+  return { aCount, bCount, diff: aCount - bCount };
+}
+
+// 检查上家手牌中是否有可以与当前玩家匹配的牌
+function upstreamHasMatchableCard(game) {
+  const humanIdx = 0;
+  const human = game.players[humanIdx];
+  if (!human || human.out) return false;
+
+  const upstreamIdx = prevActivePlayerIndex(game.players, humanIdx);
+  if (upstreamIdx < 0) return false;
+  const upstream = game.players[upstreamIdx];
+  if (!upstream || upstream.out || upstream.hand.length === 0) return false;
+
+  // 收集人类手牌中所有的 pairId
+  const humanPairIds = new Set();
+  for (const c of human.hand) {
+    if (c && c.pairId && c.type !== "joker") {
+      humanPairIds.add(c.pairId);
+    }
+  }
+
+  // 检查上家是否有任何匹配的 pairId
+  for (const c of upstream.hand) {
+    if (c && c.pairId && c.type !== "joker" && humanPairIds.has(c.pairId)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+// 作弊换牌：从其他AI手牌中找一张可匹配的牌，与上家手牌交换（瞬间完成，无动画）
+// 优先选择能平衡玩家手牌A/B比例的牌
+// 作弊换牌函数 - 已完全禁用
+function cheatSwapToUpstream(game) {
+  console.log(`[cheatSwapToUpstream] 已禁用，无作弊`);
+  return false;
+}
+
+// 在人类玩家即将抽牌前调用：JOKER教学机制
+function ensureHumanCanMatch(game) {
+  console.log("=== ensureHumanCanMatch 被调用 ===");
+
+  if (game.gameOver) return;
+
+  const humanIdx = 0;
+  const human = game.players[humanIdx];
+  if (!human || human.out || human.kind !== "human") return;
+
+  console.log(`玩家状态: roundMode=${game.roundMode}, firstDraw=${game.humanFirstDrawInGame}, consecutiveNoMatch=${game.humanConsecutiveNoMatch}`);
+
+  // 第一把特殊：JOKER教学机制（30%概率，仅第一次抽牌）
+  if (game.roundMode === 0 && !game.humanDrawnJokerInRound0 && game.humanFirstDrawInGame) {
+    if (Math.random() < 0.3) {
+      console.log("[教学] 尝试触发JOKER教学");
+      const upstreamIdx = prevActivePlayerIndex(game.players, humanIdx);
+      if (upstreamIdx >= 0) {
+        const upstream = game.players[upstreamIdx];
+
+        // 找JOKER在哪
+        let jokerHolderIdx = -1;
+        let jokerCardIdx = -1;
+        for (let pi = 1; pi < game.players.length; pi++) {
+          const idx = game.players[pi].hand.findIndex((c) => c && c.type === "joker");
+          if (idx >= 0) {
+            jokerHolderIdx = pi;
+            jokerCardIdx = idx;
+            break;
+          }
+        }
+
+        // 把JOKER换到上家
+        if (jokerHolderIdx >= 0 && jokerHolderIdx !== upstreamIdx && upstream.hand.length > 0) {
+          const jokerCard = game.players[jokerHolderIdx].hand[jokerCardIdx];
+          const swapIdx = Math.floor(Math.random() * upstream.hand.length);
+          game.players[jokerHolderIdx].hand[jokerCardIdx] = upstream.hand[swapIdx];
+          upstream.hand[swapIdx] = jokerCard;
+          game.humanDrawnJokerInRound0 = true;
+          console.log("[教学] JOKER教学成功");
+          return;
+        }
+      }
+    }
+  }
+
+  console.log(`[ensureHumanCanMatch] 无特殊操作`);
+}
+
+// AI完全随机抽牌（不考虑 A/B 平衡，避免游戏太简单）
+function getAiDrawIndex(game, aiPlayerIdx, targetPlayerIdx) {
+  if (!game || game.gameOver) return -1;
+
+  const target = game.players[targetPlayerIdx];
+  if (!target || target.out || target.hand.length === 0) return -1;
+
+  // 完全随机选择
+  return Math.floor(Math.random() * target.hand.length);
+}
+
+// 根据AI手牌数量计算抽牌延迟时间（增加紧张感）
+function getAiDrawDelay(game, aiPlayerIdx) {
+  const ai = game.players[aiPlayerIdx];
+  if (!ai || ai.out) return 400; // 默认延迟
+
+  const handCount = ai.hand.length;
+
+  if (handCount >= 3) {
+    // 3张及以上：0.3秒到0.7秒
+    return 300 + Math.random() * 400;
+  } else if (handCount === 2) {
+    // 2张：0.6秒到1秒
+    return 600 + Math.random() * 400;
+  } else if (handCount === 1) {
+    // 1张：0.8秒到1.4秒
+    return 800 + Math.random() * 600;
+  }
+
+  return 400; // 默认
+}
+
+// ❌ 已删除：validateGlobalPairIntegrity() - AI虚拟化后不需要全局配对验证
+
+// ❌ 已删除：finalTwoPlayersCheck() - AI虚拟化后不需要最终两人检查
+
+// ❌ 已删除：fixUnmatchableCards() - AI虚拟化后不需要修复不可配对的牌
+
+// 检查每个玩家的 A/B 平衡状态
+function checkAllPlayersBalance(game) {
+  console.log("=== 玩家 A/B 平衡检查 ===");
+  for (let i = 0; i < game.players.length; i++) {
+    const p = game.players[i];
+    let aCount = 0, bCount = 0;
+    for (const c of p.hand) {
+      if (!c || c.type === "joker" || !c.side) continue;
+      if (c.side === "A") aCount++;
+      else if (c.side === "B") bCount++;
+    }
+    const diff = aCount - bCount;
+    const status = Math.abs(diff) <= 1 ? "✅" : "❌";
+    console.log(`${status} ${p.name}: A=${aCount} B=${bCount} 差异=${diff} (手牌${p.hand.length}张)`);
+  }
+  console.log("======================");
+}
+
+// Expose API on window for non-module usage.
+window.Game = {
+  createRng,
+  shuffleInPlace,
+  buildDeckFromImagePairs,
+  initialDeal,
+  dealConstrained22Pairs,
+  dealPendingJokerToPlayer,
+  discardAllPairsInPlace,
+  findMatchIndex,
+  nextActivePlayerIndex,
+  prevActivePlayerIndex,
+  countNonJokerCards,
+  findJokerHolder,
+  createGame,
+  getNextPlayerIndex,
+  getUpstreamPlayerIndex,
+  canDrawFrom,
+  drawCard,
+  tryDiscardPairByCardIds,
+  findAnyPairInHand,
+  advanceTurn,
+  upstreamHasMatchableCard,
+  cheatSwapToUpstream,
+  ensureHumanCanMatch,
+  getAiDrawIndex,
+  getAiDrawDelay,
+  checkAllPlayersBalance,
+};
+

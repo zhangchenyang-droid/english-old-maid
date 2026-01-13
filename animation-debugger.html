@@ -1,0 +1,573 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>抽卡动画调试器</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 20px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #1a1a2e;
+      color: #eee;
+    }
+
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: 300px 1fr;
+      gap: 20px;
+    }
+
+    .controls {
+      background: #16213e;
+      padding: 20px;
+      border-radius: 12px;
+      height: fit-content;
+      position: sticky;
+      top: 20px;
+    }
+
+    h2 {
+      margin: 0 0 20px 0;
+      font-size: 18px;
+      color: #4ecca3;
+    }
+
+    .control-group {
+      margin-bottom: 24px;
+      padding-bottom: 20px;
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+    }
+
+    .control-group:last-child {
+      border-bottom: none;
+    }
+
+    h3 {
+      margin: 0 0 12px 0;
+      font-size: 14px;
+      color: #93deff;
+    }
+
+    .control-item {
+      margin-bottom: 16px;
+    }
+
+    label {
+      display: block;
+      font-size: 12px;
+      margin-bottom: 6px;
+      color: #aaa;
+    }
+
+    input[type="range"] {
+      width: 100%;
+      height: 6px;
+      border-radius: 3px;
+      background: rgba(255,255,255,0.1);
+      outline: none;
+      -webkit-appearance: none;
+    }
+
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: #4ecca3;
+      cursor: pointer;
+    }
+
+    input[type="range"]::-moz-range-thumb {
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: #4ecca3;
+      cursor: pointer;
+      border: none;
+    }
+
+    input[type="number"] {
+      width: 80px;
+      padding: 6px 8px;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 6px;
+      color: #eee;
+      font-size: 13px;
+    }
+
+    select {
+      width: 100%;
+      padding: 8px;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 6px;
+      color: #eee;
+      font-size: 13px;
+    }
+
+    .value-display {
+      display: inline-block;
+      margin-left: 8px;
+      font-weight: 600;
+      color: #4ecca3;
+      font-variant-numeric: tabular-nums;
+    }
+
+    button {
+      width: 100%;
+      padding: 12px;
+      margin-bottom: 8px;
+      background: #4ecca3;
+      color: #1a1a2e;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    button:hover {
+      background: #5ef5b3;
+      transform: translateY(-1px);
+    }
+
+    button:active {
+      transform: translateY(0);
+    }
+
+    button.secondary {
+      background: rgba(255,255,255,0.1);
+      color: #eee;
+    }
+
+    button.secondary:hover {
+      background: rgba(255,255,255,0.15);
+    }
+
+    .stage {
+      background: #0f3460;
+      border-radius: 12px;
+      padding: 40px;
+      min-height: 600px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .table-mock {
+      width: 100%;
+      max-width: 800px;
+      aspect-ratio: 5501 / 2552;
+      margin: 0 auto;
+      background: linear-gradient(135deg, #2d5016 0%, #1a3a0f 100%);
+      border-radius: 20px;
+      position: relative;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+    }
+
+    .hand-area {
+      position: absolute;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .hand-top {
+      left: 33%;
+      top: 2.5%;
+      width: 34%;
+      height: 22%;
+    }
+
+    .hand-left {
+      left: 0.5%;
+      top: 29%;
+      width: 27%;
+      height: 42%;
+    }
+
+    .hand-right {
+      right: 0.5%;
+      top: 29%;
+      width: 27%;
+      height: 42%;
+    }
+
+    .card {
+      width: 52px;
+      height: 72px;
+      background: url('./assets/card-back.png') center/cover;
+      border-radius: 8px;
+      border: 1px solid rgba(0,0,0,0.3);
+      position: absolute;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+      cursor: pointer;
+      transition: transform 0.2s;
+    }
+
+    .card:hover {
+      transform: translateY(-5px) !important;
+    }
+
+    .overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.7);
+      backdrop-filter: blur(8px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+
+    .overlay.active {
+      display: flex;
+    }
+
+    .draw-cards {
+      display: flex;
+      gap: 12px;
+      padding: 20px;
+    }
+
+    .draw-card {
+      width: 140px;
+      height: 196px;
+      background: url('./assets/card-back.png') center/cover;
+      border-radius: 20px;
+      border: 1px solid rgba(255,255,255,0.3);
+      box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+      cursor: pointer;
+      transform: translateY(20px);
+      opacity: 0;
+      transition: all 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+
+    .draw-card.visible {
+      transform: translateY(0);
+      opacity: 1;
+    }
+
+    .info {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      background: rgba(0,0,0,0.8);
+      padding: 12px 16px;
+      border-radius: 8px;
+      font-size: 12px;
+      color: #4ecca3;
+      font-family: 'Courier New', monospace;
+    }
+
+    .code-output {
+      background: rgba(0,0,0,0.3);
+      padding: 12px;
+      border-radius: 6px;
+      font-family: 'Courier New', monospace;
+      font-size: 11px;
+      color: #93deff;
+      margin-top: 12px;
+      max-height: 150px;
+      overflow-y: auto;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="controls">
+      <h2>🎬 抽卡动画调试器</h2>
+
+      <button id="playBtn">▶ 播放动画</button>
+      <button id="resetBtn" class="secondary">↻ 重置</button>
+
+      <div class="control-group">
+        <h3>阶段1: 手牌合拢</h3>
+        <div class="control-item">
+          <label>时长 (ms) <span class="value-display" id="val-gather-duration">150</span></label>
+          <input type="range" id="gather-duration" min="50" max="500" value="150" step="10">
+        </div>
+        <div class="control-item">
+          <label>缓动函数</label>
+          <select id="gather-easing">
+            <option value="linear">linear</option>
+            <option value="ease">ease</option>
+            <option value="ease-in">ease-in</option>
+            <option value="ease-out">ease-out</option>
+            <option value="ease-in-out" selected>ease-in-out</option>
+            <option value="cubic-bezier(0.4, 0, 0.2, 1)">cubic-bezier(0.4, 0, 0.2, 1)</option>
+            <option value="cubic-bezier(0.22, 1, 0.36, 1)">cubic-bezier(0.22, 1, 0.36, 1)</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="control-group">
+        <h3>阶段2: 样式替换</h3>
+        <div class="control-item">
+          <label>触发时间 (ms) <span class="value-display" id="val-replace-time">100</span></label>
+          <input type="range" id="replace-time" min="0" max="300" value="100" step="10">
+        </div>
+      </div>
+
+      <div class="control-group">
+        <h3>阶段3: 放大移动</h3>
+        <div class="control-item">
+          <label>开始时间 (ms) <span class="value-display" id="val-scale-start">210</span></label>
+          <input type="range" id="scale-start" min="100" max="400" value="210" step="10">
+        </div>
+        <div class="control-item">
+          <label>时长 (ms) <span class="value-display" id="val-scale-duration">90</span></label>
+          <input type="range" id="scale-duration" min="50" max="300" value="90" step="10">
+        </div>
+        <div class="control-item">
+          <label>初始缩放 <span class="value-display" id="val-scale-from">1.5</span></label>
+          <input type="range" id="scale-from" min="0.5" max="3" value="1.5" step="0.1">
+        </div>
+        <div class="control-item">
+          <label>最终缩放 <span class="value-display" id="val-scale-to">2.8</span></label>
+          <input type="range" id="scale-to" min="1" max="5" value="2.8" step="0.1">
+        </div>
+        <div class="control-item">
+          <label>缓动函数</label>
+          <select id="scale-easing">
+            <option value="linear">linear</option>
+            <option value="ease">ease</option>
+            <option value="ease-in">ease-in</option>
+            <option value="ease-out">ease-out</option>
+            <option value="ease-in-out">ease-in-out</option>
+            <option value="cubic-bezier(0.4, 0, 0.2, 1)" selected>cubic-bezier(0.4, 0, 0.2, 1)</option>
+            <option value="cubic-bezier(0.22, 1, 0.36, 1)">cubic-bezier(0.22, 1, 0.36, 1)</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="control-group">
+        <h3>阶段4: 打开界面</h3>
+        <div class="control-item">
+          <label>触发时间 (ms) <span class="value-display" id="val-open-time">300</span></label>
+          <input type="range" id="open-time" min="200" max="600" value="300" step="10">
+        </div>
+      </div>
+
+      <div class="code-output" id="codeOutput">
+        点击"播放动画"开始调试...
+      </div>
+    </div>
+
+    <div class="stage">
+      <div class="table-mock">
+        <div class="hand-area hand-top" id="handTop">
+          <!-- 卡牌将通过JS生成 -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="overlay" id="overlay">
+    <div class="draw-cards" id="drawCards">
+      <!-- 抽卡界面卡牌 -->
+    </div>
+  </div>
+
+  <div class="info" id="info">准备就绪</div>
+
+  <script>
+    // 参数状态
+    const params = {
+      gatherDuration: 150,
+      gatherEasing: 'ease-in-out',
+      replaceTime: 100,
+      scaleStart: 210,
+      scaleDuration: 90,
+      scaleFrom: 1.5,
+      scaleTo: 2.8,
+      scaleEasing: 'cubic-bezier(0.4, 0, 0.2, 1)',
+      openTime: 300
+    };
+
+    // 初始化卡牌
+    const handTop = document.getElementById('handTop');
+    const cardCount = 5;
+    const cards = [];
+
+    function initCards() {
+      handTop.innerHTML = '';
+      cards.length = 0;
+
+      const spread = 60; // 卡牌散开的范围
+      for (let i = 0; i < cardCount; i++) {
+        const card = document.createElement('div');
+        card.className = 'card';
+
+        const offset = (i - (cardCount - 1) / 2) * 15;
+        const rotation = (i - (cardCount - 1) / 2) * 8;
+
+        card.style.left = `calc(50% + ${offset}px)`;
+        card.style.top = '50%';
+        card.style.transform = `translate(-50%, -50%) rotate(${rotation}deg)`;
+        card.dataset.originalTransform = card.style.transform;
+        card.dataset.index = i;
+
+        handTop.appendChild(card);
+        cards.push(card);
+      }
+    }
+
+    // 绑定控件
+    document.querySelectorAll('input[type="range"]').forEach(input => {
+      const valDisplay = document.getElementById(`val-${input.id}`);
+      input.addEventListener('input', () => {
+        const key = input.id.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+        params[key] = parseFloat(input.value);
+        if (valDisplay) valDisplay.textContent = input.value;
+        updateCode();
+      });
+    });
+
+    document.querySelectorAll('select').forEach(select => {
+      select.addEventListener('change', () => {
+        const key = select.id.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+        params[key] = select.value;
+        updateCode();
+      });
+    });
+
+    // 更新代码输出
+    function updateCode() {
+      const code = `// 当前参数配置
+{
+  合拢时长: ${params.gatherDuration}ms
+  合拢缓动: ${params.gatherEasing}
+  替换时间: ${params.replaceTime}ms
+  放大开始: ${params.scaleStart}ms
+  放大时长: ${params.scaleDuration}ms
+  初始缩放: ${params.scaleFrom}
+  最终缩放: ${params.scaleTo}
+  放大缓动: ${params.scaleEasing}
+  打开时间: ${params.openTime}ms
+}`;
+      document.getElementById('codeOutput').textContent = code;
+    }
+
+    // 播放动画
+    let isPlaying = false;
+
+    document.getElementById('playBtn').addEventListener('click', async () => {
+      if (isPlaying) return;
+      isPlaying = true;
+
+      const info = document.getElementById('info');
+      const overlay = document.getElementById('overlay');
+
+      // 重置
+      reset();
+
+      info.textContent = '阶段1: 手牌合拢中...';
+
+      // 阶段1: 合拢
+      const handRect = handTop.getBoundingClientRect();
+      const centerX = handRect.left + handRect.width / 2;
+      const centerY = handRect.top + handRect.height / 2;
+
+      cards.forEach(card => {
+        const rect = card.getBoundingClientRect();
+        const cx = rect.left + rect.width / 2;
+        const cy = rect.top + rect.height / 2;
+        const dx = centerX - cx;
+        const dy = centerY - cy;
+
+        card.animate([
+          { transform: card.dataset.originalTransform },
+          { transform: `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px)) rotate(0deg)` }
+        ], {
+          duration: params.gatherDuration,
+          easing: params.gatherEasing,
+          fill: 'forwards'
+        });
+      });
+
+      // 阶段2: 替换样式
+      setTimeout(() => {
+        info.textContent = '阶段2: 替换顶牌样式...';
+        const topCard = cards[cards.length - 1];
+        topCard.style.width = '140px';
+        topCard.style.height = '196px';
+        topCard.style.borderRadius = '20px';
+      }, params.replaceTime);
+
+      // 阶段3: 放大移动
+      setTimeout(() => {
+        info.textContent = '阶段3: 放大并移动到中心...';
+        const topCard = cards[cards.length - 1];
+
+        const targetX = window.innerWidth / 2;
+        const targetY = window.innerHeight / 2;
+        const rect = topCard.getBoundingClientRect();
+        const cx = rect.left + rect.width / 2;
+        const cy = rect.top + rect.height / 2;
+        const moveX = targetX - cx;
+        const moveY = targetY - cy;
+
+        topCard.animate([
+          { transform: `translate(-50%, -50%) scale(${params.scaleFrom})` },
+          { transform: `translate(calc(-50% + ${moveX}px), calc(-50% + ${moveY}px)) scale(${params.scaleTo})` }
+        ], {
+          duration: params.scaleDuration,
+          easing: params.scaleEasing,
+          fill: 'forwards'
+        });
+      }, params.scaleStart);
+
+      // 阶段4: 打开界面
+      setTimeout(() => {
+        info.textContent = '阶段4: 打开抽卡界面...';
+
+        // 隐藏手牌
+        cards.forEach(card => {
+          card.style.opacity = '0';
+        });
+
+        // 显示抽卡界面
+        overlay.classList.add('active');
+        const drawCards = document.getElementById('drawCards');
+        drawCards.innerHTML = '';
+
+        for (let i = 0; i < cardCount; i++) {
+          const dc = document.createElement('div');
+          dc.className = 'draw-card';
+          drawCards.appendChild(dc);
+
+          setTimeout(() => {
+            dc.classList.add('visible');
+          }, 50 + i * 30);
+        }
+
+        setTimeout(() => {
+          info.textContent = '✓ 动画完成！';
+          isPlaying = false;
+        }, 500);
+      }, params.openTime);
+    });
+
+    // 重置
+    function reset() {
+      document.getElementById('overlay').classList.remove('active');
+      initCards();
+      document.getElementById('info').textContent = '重置完成';
+    }
+
+    document.getElementById('resetBtn').addEventListener('click', reset);
+
+    // 初始化
+    initCards();
+    updateCode();
+  </script>
+</body>
+</html>

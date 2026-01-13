@@ -14,7 +14,7 @@
     <div class="app">
       <div class="topbar">
         <div class="title">
-          <h1>OLD MAID · 抽王八（英语学习版）</h1>
+          <h1>OLD MAID · 抽王八（英语学习版）<span id="levelIndicator" style="margin-left: 12px; font-size: 14px; color: rgba(255,255,255,0.7);"></span></h1>
           <div class="sub">英文图片 ↔ 动物图片配对 · 逆时针轮流 · 抽上家牌 · 匹配规则：*_A ↔ *_B</div>
         </div>
         <div class="btnRow">
@@ -132,7 +132,8 @@
             <div id="endTitle" class="endTitle"></div>
             <div id="endSubtitle" class="endSubtitle"></div>
             <div class="endActions">
-              <button id="btnPlayAgain" class="primary" type="button">再来一局</button>
+              <button id="btnNextLevel" class="primary" type="button" style="display: none;">进入下一关</button>
+              <button id="btnPlayAgain" class="primary" type="button">重新挑战</button>
               <button id="btnBackToSetup" type="button">返回设置</button>
             </div>
           </div>
@@ -153,11 +154,22 @@
             <button id="btnTuneCopy" class="primary" type="button">复制参数</button>
           </div>
         </div>
+
+        <!-- A/B 平衡调试面板 -->
+        <div id="abDebugPanel" class="abDebugPanel hidden">
+          <div class="abDebugHeader">A/B 分布</div>
+          <div id="abDebugContent" class="abDebugContent"></div>
+        </div>
       </div>
     </div>
 
+    <!-- Three.js (CDN) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
     <!-- deck -->
     <script src="./deck/image_pairs.js"></script>
+    <!-- Joker summon effect -->
+    <script src="./src/joker-summon.js"></script>
     <!-- app (no modules so file:// works) -->
     <script src="./src/game.js"></script>
     <script src="./src/ui.js"></script>
