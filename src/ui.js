@@ -921,48 +921,27 @@ function animateDrawCardFlyFromPoint(startX, startY, toPlayerIdx, drawnCard, cur
     // 计算目标缩放（从抽牌界面140px缩放到玩家手牌尺寸）
     const targetScale = targetCardWidth / 140;
 
-    // 生成关键帧（贝塞尔曲线 + 过冲）
+    // 生成关键帧（贝塞尔曲线 + ease-in-out，无过冲）
     const steps = 30;
     const keyframes = [];
-    const overshootDist = dist * 0.05; // 5% 过冲
 
     for (let i = 0; i <= steps; i++) {
       const t = i / steps;
-      let easeT, overshoot;
 
-      // 两阶段缓动：加速接近（68%）+ 过冲回落（32%）
-      if (t <= 0.72) {
-        const t1 = t / 0.72;
-        easeT = 1 - Math.pow(1 - t1, 3); // ease-out
-        overshoot = 1.05; // 5% 过冲
-      } else {
-        const t2 = (t - 0.72) / 0.28;
-        const easeT2 = t2 < 0.5 ? 4 * t2 * t2 * t2 : 1 - Math.pow(-2 * t2 + 2, 3) / 2;
-        easeT = 1.05 - 0.05 * easeT2; // 从 1.05 回到 1.0
-        overshoot = easeT;
-      }
+      // ease-in-out 缓动（前半段加速，后半段减速）
+      const easeT = t < 0.5
+        ? 2 * t * t
+        : 1 - Math.pow(-2 * t + 2, 2) / 2;
 
       // 贝塞尔曲线轨迹（二次）
-      const arcT = Math.min(easeT, 1.0);
-      const baseX = (1-arcT)*(1-arcT)*startX + 2*(1-arcT)*arcT*controlX + arcT*arcT*endX;
-      const baseY = (1-arcT)*(1-arcT)*startY + 2*(1-arcT)*arcT*controlY + arcT*arcT*endY;
-
-      // 添加过冲（沿运动方向）
-      const dirX = endX - startX;
-      const dirY = endY - startY;
-      const dirLen = Math.sqrt(dirX * dirX + dirY * dirY);
-      const normX = dirLen > 0 ? dirX / dirLen : 0;
-      const normY = dirLen > 0 ? dirY / dirLen : 0;
-      const overshootAmount = (overshoot - 1.0) * overshootDist;
-
-      const x = baseX + normX * overshootAmount;
-      const y = baseY + normY * overshootAmount;
+      const x = (1-easeT)*(1-easeT)*startX + 2*(1-easeT)*easeT*controlX + easeT*easeT*endX;
+      const y = (1-easeT)*(1-easeT)*startY + 2*(1-easeT)*easeT*controlY + easeT*easeT*endY;
 
       // 平滑缩放
-      const currentScale = 1 + (targetScale - 1) * Math.min(arcT, 1.0);
+      const currentScale = 1 + (targetScale - 1) * easeT;
 
       // 淡出效果
-      const opacity = 1 - 0.05 * Math.min(arcT, 1.0);
+      const opacity = 1 - 0.05 * easeT;
 
       keyframes.push({
         left: `${x - 70}px`,
