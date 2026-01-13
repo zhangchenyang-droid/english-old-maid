@@ -1242,9 +1242,9 @@ input[type="number"]:focus {
   justify-content: center;
   /* 文字位置可调整 */
   padding-left: var(--hand-count-text-x, 62px);
-  padding-top: var(--hand-count-text-y, 0px);
+  padding-top: 0px; /* 上边距改为0 */
   padding-right: 10px;
-  padding-bottom: 6px;
+  padding-bottom: 4px; /* 从6px减少到4px，数字整体往上移 */
   font-weight: 900;
   font-size: 14px; /* 字体从18px→16px→14px */
   color: rgba(255,255,255,0.98);
@@ -1284,6 +1284,14 @@ input[type="number"]:focus {
              scale(calc(var(--hand-count-scale-x, 1) * 1.5), calc(var(--hand-count-scale-y, 1) * 1.5));
   padding-left: var(--hand-count-bottom-text-x, 62px);
   padding-top: var(--hand-count-bottom-text-y, 0px);
+}
+
+/* 数字独立样式：支持独立缩放和负数偏移 */
+.countText {
+  display: inline-block;
+  transform: translateY(var(--hand-count-text-offset-y, 0px))
+             scale(var(--hand-count-text-scale-x, 1), var(--hand-count-text-scale-y, 1));
+  transform-origin: center;
 }
 
 /* 提示手 */

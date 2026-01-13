@@ -88,10 +88,10 @@ function renderSeats(game, opts = {}) {
 
     // 🆕 显示剩余手牌数量
     if (p.out) {
-      s.count.textContent = "已出完";
+      s.count.innerHTML = '<span class="countText">已出完</span>';
     } else {
-      // 所有玩家：仅显示剩余手牌数量
-      s.count.textContent = `${p.hand.length}`;
+      // 所有玩家：仅显示剩余手牌数量，用span包装以支持独立缩放
+      s.count.innerHTML = `<span class="countText">${p.hand.length}</span>`;
     }
   }
 
@@ -2651,6 +2651,9 @@ function initUi(imagePairs = []) {
       bottom: { x: 18, y: -15, textX: 62, textY: 0 },
       scaleX: 0.73,
       scaleY: 1.29,
+      textScaleX: 1.0,
+      textScaleY: 1.0,
+      textOffsetY: 0,
       x: 27,
       y: 27,
     },
@@ -2785,6 +2788,10 @@ function initUi(imagePairs = []) {
     // Global scale
     document.documentElement.style.setProperty("--hand-count-scale-x", String(clamp(hc.scaleX || 1.0, 0.3, 3.0)));
     document.documentElement.style.setProperty("--hand-count-scale-y", String(clamp(hc.scaleY || 1.0, 0.3, 3.0)));
+    // Text scale and offset
+    document.documentElement.style.setProperty("--hand-count-text-scale-x", String(clamp(hc.textScaleX || 1.0, 0.5, 2.0)));
+    document.documentElement.style.setProperty("--hand-count-text-scale-y", String(clamp(hc.textScaleY || 1.0, 0.5, 2.0)));
+    document.documentElement.style.setProperty("--hand-count-text-offset-y", `${clamp(hc.textOffsetY || 0, -20, 20)}px`);
 
     // Apply zone name position (per zone)
     const zn = layout.zoneName || {};
@@ -3134,8 +3141,14 @@ function initUi(imagePairs = []) {
 
     // Global scale
     handCountGroup.appendChild(mkSub("全局缩放"));
-    handCountGroup.appendChild(addHandCountScaleSlider("scaleX", "X缩放", 0.3, 3.0, 0.01));
-    handCountGroup.appendChild(addHandCountScaleSlider("scaleY", "Y缩放", 0.3, 3.0, 0.01));
+    handCountGroup.appendChild(addHandCountScaleSlider("scaleX", "标牌X缩放", 0.3, 3.0, 0.01));
+    handCountGroup.appendChild(addHandCountScaleSlider("scaleY", "标牌Y缩放", 0.3, 3.0, 0.01));
+
+    // Text scale and offset
+    handCountGroup.appendChild(mkSub("数字独立调整"));
+    handCountGroup.appendChild(addHandCountScaleSlider("textScaleX", "数字X缩放", 0.5, 2.0, 0.01));
+    handCountGroup.appendChild(addHandCountScaleSlider("textScaleY", "数字Y缩放", 0.5, 2.0, 0.01));
+    handCountGroup.appendChild(addHandCountScaleSlider("textOffsetY", "数字Y偏移", -20, 20, 1));
 
     tunerControls.appendChild(handCountGroup);
 
