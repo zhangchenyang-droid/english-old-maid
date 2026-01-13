@@ -1086,6 +1086,7 @@ function animateAiDiscardPair(playerIdx, card1, card2, fromRectOverride, onCompl
       outerContainer.style.position = "fixed";
       outerContainer.style.zIndex = "10000";
       outerContainer.style.pointerEvents = "none";
+      outerContainer.style.perspective = "1000px"; // 添加透视效果，让3D翻转更明显
 
       // 内层翻转容器：专门负责 Y 轴翻转
       const flipContainer = document.createElement("div");
