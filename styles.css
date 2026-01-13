@@ -1627,5 +1627,32 @@ input[type="number"]:focus {
   .tableBg::before {
     border-radius: 0;
   }
+
+  /* 移动端隐藏配对按钮，双击卡牌即可配对 */
+  .choiceRow {
+    display: none !important;
+  }
+
+  /* 移动端优化：隐藏浏览器UI */
+  html {
+    height: 100%;
+    overflow: hidden;
+  }
+
+  body {
+    height: 100%;
+    overflow: hidden;
+  }
+
+  .app {
+    height: 100vh;
+    height: 100dvh; /* 动态视口高度，排除浏览器UI */
+  }
+
+  /* 游戏区域占满整个屏幕 */
+  #game {
+    height: calc(100vh - 60px);
+    height: calc(100dvh - 60px);
+  }
 }
 
