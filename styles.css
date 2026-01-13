@@ -1250,7 +1250,11 @@ input[type="number"]:focus {
   font-weight: 900;
   font-size: 14px; /* 字体从18px→16px→14px */
   color: rgba(255,255,255,0.98);
-  text-shadow: none; /* 移除阴影 */
+  text-shadow:
+    -1px -1px 0 rgba(0,0,0,0.35),
+    1px -1px 0 rgba(0,0,0,0.35),
+    -1px 1px 0 rgba(0,0,0,0.35),
+    1px 1px 0 rgba(0,0,0,0.35); /* 细黑色描边 */
   font-variant-numeric: tabular-nums;
   /* 绝对定位，不占据flex空间 */
   position: absolute;
