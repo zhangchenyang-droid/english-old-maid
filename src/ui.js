@@ -812,8 +812,14 @@ function animateDrawCardFly(fromPlayerIdx, toPlayerIdx, drawnCard, onComplete) {
 
 // Animate card draw from a specific point (used when drawing from overlay)
 // startX/startY: the actual pixel position where the card currently is
-function animateDrawCardFlyFromPoint(startX, startY, toPlayerIdx, drawnCard, onComplete) {
-  console.log("[animateDrawCardFlyFromPoint] 开始", { startX, startY, toPlayerIdx, drawnCard });
+function animateDrawCardFlyFromPoint(startX, startY, toPlayerIdx, drawnCard, currentHandCount, onComplete) {
+  // 处理参数重载：如果第5个参数是函数，说明没有传currentHandCount
+  if (typeof currentHandCount === 'function') {
+    onComplete = currentHandCount;
+    currentHandCount = null;
+  }
+
+  console.log("[animateDrawCardFlyFromPoint] 开始", { startX, startY, toPlayerIdx, drawnCard, currentHandCount });
   try {
     const toHandEl = seatHandElByPlayerIndex(toPlayerIdx);
     console.log("[animateDrawCardFlyFromPoint] toHandEl:", toHandEl);
@@ -824,8 +830,9 @@ function animateDrawCardFlyFromPoint(startX, startY, toPlayerIdx, drawnCard, onC
     }
 
     const toRect = toHandEl.getBoundingClientRect();
-    const player = window.game?.players?.[toPlayerIdx];
-    const numCards = player ? player.hand.length + 1 : 1; // 加上即将抽的这张牌
+    // 优先使用传入的手牌数量，否则从window.game获取
+    const numCards = currentHandCount != null ? currentHandCount + 1 : (window.game?.players?.[toPlayerIdx]?.hand?.length || 0) + 1;
+    console.log(`[玩家抽卡] 传入手牌数: ${currentHandCount}, 计算目标时使用: ${numCards}`);
 
     // 先确定目标玩家手牌的实际卡牌尺寸（用于后续位置计算）
     let targetCardWidth, targetCardHeight;
@@ -861,6 +868,7 @@ function animateDrawCardFlyFromPoint(startX, startY, toPlayerIdx, drawnCard, onC
       const d = numCards - 1 - center; // 最右边
       endX = toRect.left + toRect.width / 2 + d * spread;
       endY = toRect.top + 18 + targetCardHeight / 2 + Math.abs(d) * 0.8;
+      console.log(`[玩家抽卡] 目标位置计算: numCards=${numCards}, center=${center}, d=${d}, spread=${spread}, endX=${endX}, endY=${endY}`);
     } else {
       // 其他玩家（保持原逻辑）
       endX = toRect.left + toRect.width / 2;
@@ -4487,8 +4495,9 @@ function initUi(imagePairs = []) {
             }
 
             // Normal card: fly directly to hand (从翻转后的实际位置开始)
-            // 玩家抽牌，目标是索引0（人类玩家）
-            animateDrawCardFlyFromPoint(cardStartX, cardStartY, 0, drawnCard, () => {
+            // 玩家抽牌，目标是索引0（人类玩家），传递当前手牌数量
+            const currentHandCount = cur.hand.length;
+            animateDrawCardFlyFromPoint(cardStartX, cardStartY, 0, drawnCard, currentHandCount, () => {
               console.log("[飞行完成] 执行drawCard...");
 
               // 🚨 修复：从上家手牌中移除这张卡
