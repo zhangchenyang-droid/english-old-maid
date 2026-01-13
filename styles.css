@@ -1605,11 +1605,8 @@ input[type="number"]:focus {
     padding: 0;
   }
 
-  .topbar {
-    display: none;
-  }
-
-  .gamePanel {
+  /* 移动端横屏时，游戏界面全屏显示 */
+  #game:not(.hidden) {
     position: fixed;
     inset: 0;
     z-index: 100;
@@ -1622,6 +1619,11 @@ input[type="number"]:focus {
     justify-content: center;
     padding: 0;
     margin: 0;
+  }
+
+  /* 游戏进行时隐藏顶部栏 */
+  #game:not(.hidden) ~ .topbar {
+    display: none;
   }
 
   .tableBg {
