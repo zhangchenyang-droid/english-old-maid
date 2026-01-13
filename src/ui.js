@@ -824,7 +824,7 @@ function animateDrawCardFlyFromPoint(startX, startY, toPlayerIdx, drawnCard, onC
     }
 
     const toRect = toHandEl.getBoundingClientRect();
-    const player = game.players[toPlayerIdx];
+    const player = window.game?.players?.[toPlayerIdx];
     const numCards = player ? player.hand.length + 1 : 1; // 加上即将抽的这张牌
 
     // 先确定目标玩家手牌的实际卡牌尺寸（用于后续位置计算）
