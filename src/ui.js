@@ -928,10 +928,10 @@ function animateDrawCardFlyFromPoint(startX, startY, toPlayerIdx, drawnCard, cur
     for (let i = 0; i <= steps; i++) {
       const t = i / steps;
 
-      // ease-in-out 缓动（前半段加速，后半段减速）
+      // 改进的ease-in-out：起步更快，收尾平滑
       const easeT = t < 0.5
-        ? 2 * t * t
-        : 1 - Math.pow(-2 * t + 2, 2) / 2;
+        ? 4 * t * t * t  // 前半段三次方加速（更快起步）
+        : 1 - Math.pow(-2 * t + 2, 3) / 2; // 后半段三次方减速
 
       // 贝塞尔曲线轨迹（二次）
       const x = (1-easeT)*(1-easeT)*startX + 2*(1-easeT)*easeT*controlX + easeT*easeT*endX;
@@ -952,9 +952,9 @@ function animateDrawCardFlyFromPoint(startX, startY, toPlayerIdx, drawnCard, cur
       });
     }
 
-    // 根据距离动态计算时长：基础450ms + 距离因子
-    // 短距离（200px）约500ms，长距离（600px）约700ms
-    const baseDuration = 450;
+    // 根据距离动态计算时长：基础400ms + 距离因子
+    // 短距离（200px）约450ms，长距离（600px）约650ms
+    const baseDuration = 400;
     const distanceFactor = Math.min(dist / 1000, 0.5); // 最多增加250ms
     const duration = baseDuration + distanceFactor * 500;
 
