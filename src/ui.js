@@ -940,8 +940,10 @@ function animateDrawCardFlyFromPoint(startX, startY, toPlayerIdx, drawnCard, cur
       // 平滑缩放
       const currentScale = 1 + (targetScale - 1) * easeT;
 
-      // 飞行中的旋转角度：从0度到10度再回到0度（中间倾斜）
-      const rotationAngle = Math.sin(easeT * Math.PI) * 10; // 峰值10度
+      // 飞行中的旋转角度：0度 → 10度 → 5度（终点保持轻微倾斜）
+      const rotationAngle = easeT < 0.5
+        ? easeT * 2 * 10  // 前半段从0到10度
+        : 10 - (easeT - 0.5) * 2 * 5; // 后半段从10度降到5度
 
       // 淡出效果
       const opacity = 1 - 0.05 * easeT;
