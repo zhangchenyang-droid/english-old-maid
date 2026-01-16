@@ -4478,10 +4478,23 @@ function initUi(imagePairs = []) {
                 });
               });
 
-              // 动画完成后清除标记
+              // 🔧 修复：动态计算adjusting清除时间，基于实际飞行动画时长
+              // 计算飞行时长（与animateDrawCardFlyFromPoint内部逻辑一致）
+              const tableBg = document.querySelector('.tableBg');
+              const tableBgRect = tableBg ? tableBg.getBoundingClientRect() : null;
+              const endX = tableBgRect ? tableBgRect.left + tableBgRect.width / 2 : window.innerWidth / 2;
+              const endY = tableBgRect ? (tableBgRect.top + tableBgRect.height * 0.85) : (window.innerHeight * 0.85);
+              const dist = Math.hypot(endX - cardStartX, endY - cardStartY);
+              const baseDuration = 400;
+              const distanceFactor = Math.min(dist / 1000, 0.5);
+              const flyDuration = baseDuration + distanceFactor * 500; // 400-650ms
+
+              // adjusting清除时间 = transition时间(420ms) + 飞行时间 + 50ms缓冲
+              const adjustingDuration = 420 + flyDuration + 50;
+
               setTimeout(() => {
                 bottomHandEl.dataset.adjusting = "";
-              }, 500);
+              }, adjustingDuration);
             }
 
             // Normal card: fly directly to hand (从翻转后的实际位置开始)
