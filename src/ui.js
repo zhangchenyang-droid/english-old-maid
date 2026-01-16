@@ -3883,6 +3883,27 @@ function initUi(imagePairs = []) {
   });
 
   btnStart.addEventListener("click", startNewGame);
+
+  // 设置面板的重置进度按钮
+  const btnResetLevel = document.getElementById("btnResetLevel");
+  if (btnResetLevel) {
+    btnResetLevel.addEventListener("click", () => {
+      // 重置关卡进度
+      window.__GAME_ROUND_TRACKER__.currentLevel = 1;
+      window.__GAME_ROUND_TRACKER__.roundNumber = 0;
+
+      // 清除 localStorage
+      try {
+        localStorage.removeItem("gameRoundTracker");
+        console.log(`[重置进度] 已重置为第1关`);
+        alert("游戏进度已重置！");
+      } catch (e) {
+        console.error(`[重置进度] 清除失败:`, e);
+        alert("重置失败，请重试");
+      }
+    });
+  }
+
   btnRestart.addEventListener("click", () => {
     // 返回设置时重置关卡
     window.__GAME_ROUND_TRACKER__.currentLevel = 1;

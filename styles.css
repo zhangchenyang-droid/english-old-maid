@@ -125,6 +125,12 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
 }
 .primary:hover { background: rgba(122, 162, 255, 0.24); }
 
+.secondary {
+  background: rgba(200, 200, 200, 0.12);
+  border-color: rgba(200, 200, 200, 0.20);
+}
+.secondary:hover { background: rgba(200, 200, 200, 0.18); }
+
 .panel {
   margin-top: 14px;
   border-radius: var(--radius);
