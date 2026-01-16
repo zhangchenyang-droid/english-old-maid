@@ -4451,51 +4451,8 @@ function initUi(imagePairs = []) {
           } else {
             console.log("[翻转完成] 普通卡牌，启动飞行动画", { drawnCard, cardStartX, cardStartY });
 
-            // 🆕 立即调整玩家手牌位置，为新卡让出空位（学习AI出牌的自适应调整）
-            const bottomHandEl = document.getElementById("pBottomHand");
-            if (bottomHandEl && cur) {
-              const currentN = cur.hand.length; // 当前手牌数量
-              const newN = currentN + 1; // 加上即将抽的卡
-              const allCards = Array.from(bottomHandEl.querySelectorAll(".faceCard"));
-
-              // 标记手牌区域正在调整，防止renderSeats重新渲染
-              bottomHandEl.dataset.adjusting = "true";
-
-              // 计算新的布局（为最右边的新卡让出空位）
-              const newCenter = (newN - 1) / 2;
-              allCards.forEach((card, k) => {
-                const d = k - newCenter;
-                const spread = Math.min(62, 920 / Math.max(1, newN - 1));
-                const sx = d * spread;
-                const sy = Math.abs(d) * 0.8;
-
-                // 添加平滑过渡
-                card.style.transition = "left 420ms cubic-bezier(0.22, 1, 0.36, 1), top 420ms cubic-bezier(0.22, 1, 0.36, 1)";
-
-                requestAnimationFrame(() => {
-                  card.style.setProperty("--sx", `${sx}px`);
-                  card.style.setProperty("--sy", `${sy}px`);
-                });
-              });
-
-              // 🔧 修复：动态计算adjusting清除时间，基于实际飞行动画时长
-              // 计算飞行时长（与animateDrawCardFlyFromPoint内部逻辑一致）
-              const tableBg = document.querySelector('.tableBg');
-              const tableBgRect = tableBg ? tableBg.getBoundingClientRect() : null;
-              const endX = tableBgRect ? tableBgRect.left + tableBgRect.width / 2 : window.innerWidth / 2;
-              const endY = tableBgRect ? (tableBgRect.top + tableBgRect.height * 0.85) : (window.innerHeight * 0.85);
-              const dist = Math.hypot(endX - cardStartX, endY - cardStartY);
-              const baseDuration = 400;
-              const distanceFactor = Math.min(dist / 1000, 0.5);
-              const flyDuration = baseDuration + distanceFactor * 500; // 400-650ms
-
-              // adjusting清除时间 = transition时间(420ms) + 飞行时间 + 50ms缓冲
-              const adjustingDuration = 420 + flyDuration + 50;
-
-              setTimeout(() => {
-                bottomHandEl.dataset.adjusting = "";
-              }, adjustingDuration);
-            }
+            // 🔧 修复v2：删除adjusting机制，对齐AI逻辑
+            // 让renderAll在飞行完成后直接处理手牌布局，100%可靠
 
             // Normal card: fly directly to hand (从翻转后的实际位置开始)
             // 玩家抽牌，目标是索引0（人类玩家），传递当前手牌数量
