@@ -1987,7 +1987,7 @@ function showRoundStartPanel(onClickCallback) {
     overlay.className = "roundStartOverlay";
     overlay.innerHTML = `
       <div class="roundStartPanel">
-        <img src="./assets/ui_buttons/round-start-panel.png" alt="回合开始" />
+        <img src="./assets/ui_buttons/round-start-panel.png?v=zh1" alt="回合开始" />
       </div>
     `;
     document.body.appendChild(overlay);
