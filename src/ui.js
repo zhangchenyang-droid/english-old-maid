@@ -3693,10 +3693,10 @@ function initUi(imagePairs = []) {
             }
 
             // 从副本中移除这一对（避免重复查找）
-            const idx1 = handCopy.findIndex(c => c.id === pair[0].id);
-            const idx2 = handCopy.findIndex(c => c.id === pair[1].id);
-            if (idx1 >= 0) handCopy.splice(idx1, 1);
-            if (idx2 >= 0) handCopy.splice(idx2, 1);
+            for (const card of pair) {
+              const idx = handCopy.findIndex(c => c.id === card.id);
+              if (idx >= 0) handCopy.splice(idx, 1);
+            }
           }
 
           if (pairs.length > 0) {
@@ -3784,10 +3784,12 @@ function initUi(imagePairs = []) {
                 console.log(`[配对动画] ${aiName} 动画完成 pair ${pairIdx + 1}`);
 
                 // 动画完成后才从手牌中移除这一对并添加到弃牌堆
-                const idx1 = player.hand.findIndex(c => c.id === pair.card1.id);
-                const idx2 = player.hand.findIndex(c => c.id === pair.card2.id);
-                if (idx1 >= 0) player.hand.splice(idx1, 1);
-                if (idx2 >= 0) player.hand.splice(idx2, 1);
+                // 🚨 修复：每删一张都重新找下标。原来两个下标先算好再连删，
+                // 删掉第一张后第二个下标会错位，删掉一张无关的牌、留下 card2，产生永远配不上的孤儿牌
+                for (const card of [pair.card1, pair.card2]) {
+                  const idx = player.hand.findIndex(c => c.id === card.id);
+                  if (idx >= 0) player.hand.splice(idx, 1);
+                }
                 game.discardPile.push(pair.card1, pair.card2);
                 player.out = player.hand.length === 0;
 
