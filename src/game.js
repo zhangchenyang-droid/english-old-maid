@@ -203,6 +203,19 @@ function initialDeal(deck, playerCount, rand = Math.random) {
     console.log(`[发牌] ${players[p].name}: ${players[p].hand.length}张 (A:${players[p].hand.filter(c=>c.side==='A').length} B:${players[p].hand.filter(c=>c.side==='B').length})，目标可消除:${targetMatchablePairs}对`);
   }
 
+  // 🚨 修复：上面因"避免同pairId"会漏发牌，漏掉的牌的另一半成了永远配不上的孤儿牌，
+  // 导致终局几个人循环抽同一张牌。剩余的牌补发给手牌最少的AI（不动玩家的配对设计）
+  const leftover = deck.filter(c => !usedCards.has(c.id));
+  for (const card of leftover) {
+    let target = 1;
+    for (let p = 2; p < playerCount; p++) {
+      if (players[p].hand.length < players[target].hand.length) target = p;
+    }
+    players[target].hand.push(card);
+    usedCards.add(card.id);
+  }
+  if (leftover.length) console.log(`[发牌] 补发漏发的牌:`, leftover.map(c => c.id));
+
   // 验证：检查是否有重复卡牌
   console.log("=== 发牌结果检查 ===");
   for (let p = 0; p < playerCount; p++) {
