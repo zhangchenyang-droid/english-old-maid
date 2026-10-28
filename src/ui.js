@@ -3904,6 +3904,24 @@ function initUi(imagePairs = []) {
     });
   }
 
+  // 管理员模式：只有用 ?admin=karnoz 打开过的设备才能用"重置进度"和"配对数量"
+  // （打开一次后记在本机 localStorage，之后普通网址也生效；?admin=off 取消）
+  try {
+    const adminParam = new URLSearchParams(location.search).get("admin");
+    if (adminParam === "karnoz") localStorage.setItem("oldMaidAdmin", "1");
+    if (adminParam === "off") localStorage.removeItem("oldMaidAdmin");
+  } catch (e) {}
+  let isAdmin = false;
+  try { isAdmin = localStorage.getItem("oldMaidAdmin") === "1"; } catch (e) {}
+  if (!isAdmin) {
+    for (const el of [btnResetLevel, pairCountInput, pairCountNum]) {
+      if (!el) continue;
+      el.disabled = true;
+      el.style.opacity = "0.4";
+      el.style.cursor = "not-allowed";
+    }
+  }
+
   btnRestart.addEventListener("click", () => {
     // 返回设置时重置关卡
     window.__GAME_ROUND_TRACKER__.currentLevel = 1;
