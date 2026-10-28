@@ -87,6 +87,15 @@ function initialDeal(deck, playerCount, rand = Math.random) {
   const tracker = window.__GAME_ROUND_TRACKER__;
   const currentLevel = tracker ? tracker.currentLevel : 1;
 
+  // ============ 第3关之后：随机局（纯随机发牌，无任何配对控制） ============
+  if (currentLevel > 3) {
+    // deck 已洗过，整副轮流发给每个玩家
+    deck.forEach((card, i) => players[i % playerCount].hand.push(card));
+    for (const p of players) p.out = p.hand.length === 0;
+    console.log(`[随机局] 纯随机发牌:`, players.map(p => `${p.name}:${p.hand.length}张`).join(' '));
+    return players;
+  }
+
   console.log(`[发牌调试] GAME_ROUND_TRACKER:`, tracker);
   console.log(`[发牌调试] currentLevel = ${currentLevel}, 类型: ${typeof currentLevel}`);
 

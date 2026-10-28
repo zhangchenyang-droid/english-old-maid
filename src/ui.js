@@ -3575,7 +3575,7 @@ function initUi(imagePairs = []) {
 
     // 更新关卡显示
     const currentLevel = window.__GAME_ROUND_TRACKER__.currentLevel;
-    $("#levelIndicator").textContent = `- 第${currentLevel}关`;
+    $("#levelIndicator").textContent = currentLevel > 3 ? `- 随机局` : `- 第${currentLevel}关`;
 
     game = window.Game.createGame({
       pairs: pickedPairs,
@@ -3940,7 +3940,8 @@ function initUi(imagePairs = []) {
   $("#btnNextLevel").addEventListener("click", () => {
     // 进入下一关
     console.log(`[关卡切换] 当前关卡: ${window.__GAME_ROUND_TRACKER__.currentLevel}`);
-    if (window.__GAME_ROUND_TRACKER__.currentLevel < 3) {
+    // 第3关通过后进入随机局（第4关 = 随机局，之后一直停留在随机局）
+    if (window.__GAME_ROUND_TRACKER__.currentLevel <= 3) {
       window.__GAME_ROUND_TRACKER__.currentLevel++;
       window.__GAME_ROUND_TRACKER__.roundNumber = window.__GAME_ROUND_TRACKER__.currentLevel - 1;
       console.log(`[关卡切换] 进入下一关: ${window.__GAME_ROUND_TRACKER__.currentLevel}`);
@@ -4232,13 +4233,9 @@ function initUi(imagePairs = []) {
           shouldMatch = Math.random() < probability;
           console.log(`[第3关-概率机器] 尝试次数:${game.humanDrawAttempts} 概率:${(probability*100).toFixed(0)}% 触发:${shouldMatch}`);
         }
-        // ============ 默认：使用第3关规则 ============
+        // ============ 随机局：概率机器禁用，抽到什么就是什么 ============
         else {
-          probability = 0.5;
-          if (game.humanDrawAttempts === 1) probability = 0.7;
-          if (game.humanDrawAttempts >= 2) probability = 1.0;
-          shouldMatch = Math.random() < probability;
-          console.log(`[第${currentLevel}关-概率机器] 尝试次数:${game.humanDrawAttempts} 概率:${(probability*100).toFixed(0)}% 触发:${shouldMatch}`);
+          console.log(`[随机局] 概率机器未启用（纯随机）`);
         }
 
         // 从上家手牌中抽取（真实卡牌）
@@ -5524,21 +5521,28 @@ function initUi(imagePairs = []) {
       const currentLevel = window.__GAME_ROUND_TRACKER__.currentLevel;
 
       // 显示关卡结果
-      if (youLose) {
+      if (currentLevel > 3) {
+        // 随机局：不分过关/失败，直接再来一局
+        endTitle.textContent = youLose ? `你输了` : `🎉 你赢了！`;
+        endSubtitle.textContent = youLose ? `你手里留着"王八牌"！` : (loser ? `${loser.name} 拿着王八牌。` : "");
+        $("#btnNextLevel").style.display = "none";
+        $("#btnPlayAgain").textContent = "再来一局";
+      } else if (youLose) {
         endTitle.textContent = `第${currentLevel}关失败`;
         endSubtitle.textContent = `你手里留着"王八牌"！`;
         $("#btnNextLevel").style.display = "none";
+        $("#btnPlayAgain").textContent = "重新挑战";
       } else {
         endTitle.textContent = `🎉 第${currentLevel}关通过！`;
         endSubtitle.textContent = loser ? `${loser.name} 拿着王八牌。` : "恭喜过关！";
 
         // 如果不是第三关，显示"进入下一关"按钮
+        $("#btnNextLevel").style.display = "block";
+        $("#btnPlayAgain").textContent = "重新挑战本关";
         if (currentLevel < 3) {
-          $("#btnNextLevel").style.display = "block";
-          $("#btnPlayAgain").textContent = "重新挑战本关";
+          $("#btnNextLevel").textContent = "进入下一关";
         } else {
-          $("#btnNextLevel").style.display = "none";
-          $("#btnPlayAgain").textContent = "重新挑战";
+          $("#btnNextLevel").textContent = "继续玩（随机局）";
           endSubtitle.textContent = "🎊 恭喜通关全部三关！";
         }
       }
