@@ -3575,7 +3575,7 @@ function initUi(imagePairs = []) {
 
     // 更新关卡显示
     const currentLevel = window.__GAME_ROUND_TRACKER__.currentLevel;
-    $("#levelIndicator").textContent = currentLevel > 3 ? `- 随机局` : `- 第${currentLevel}关`;
+    $("#levelIndicator").textContent = `- 第${currentLevel}关`;
 
     game = window.Game.createGame({
       pairs: pickedPairs,
@@ -3940,24 +3940,20 @@ function initUi(imagePairs = []) {
   $("#btnNextLevel").addEventListener("click", () => {
     // 进入下一关
     console.log(`[关卡切换] 当前关卡: ${window.__GAME_ROUND_TRACKER__.currentLevel}`);
-    // 第3关通过后进入随机局（第4关 = 随机局，之后一直停留在随机局）
-    if (window.__GAME_ROUND_TRACKER__.currentLevel <= 3) {
-      window.__GAME_ROUND_TRACKER__.currentLevel++;
-      window.__GAME_ROUND_TRACKER__.roundNumber = window.__GAME_ROUND_TRACKER__.currentLevel - 1;
-      console.log(`[关卡切换] 进入下一关: ${window.__GAME_ROUND_TRACKER__.currentLevel}`);
+    // 关卡数无限叠加；第4关起为纯随机发牌
+    window.__GAME_ROUND_TRACKER__.currentLevel++;
+    window.__GAME_ROUND_TRACKER__.roundNumber = window.__GAME_ROUND_TRACKER__.currentLevel - 1;
+    console.log(`[关卡切换] 进入下一关: ${window.__GAME_ROUND_TRACKER__.currentLevel}`);
 
-      // 保存到 localStorage
-      try {
-        localStorage.setItem("gameRoundTracker", JSON.stringify(window.__GAME_ROUND_TRACKER__));
-        console.log(`[关卡切换] 已保存到localStorage`);
-      } catch (e) {
-        console.error(`[关卡切换] 保存失败:`, e);
-      }
-
-      startNewGame();
-    } else {
-      console.log(`[关卡切换] 已经是最后一关，不能继续`);
+    // 保存到 localStorage
+    try {
+      localStorage.setItem("gameRoundTracker", JSON.stringify(window.__GAME_ROUND_TRACKER__));
+      console.log(`[关卡切换] 已保存到localStorage`);
+    } catch (e) {
+      console.error(`[关卡切换] 保存失败:`, e);
     }
+
+    startNewGame();
   });
 
   btnBackToSetup.addEventListener("click", () => {
@@ -5521,30 +5517,20 @@ function initUi(imagePairs = []) {
       const currentLevel = window.__GAME_ROUND_TRACKER__.currentLevel;
 
       // 显示关卡结果
-      if (currentLevel > 3) {
-        // 随机局：不分过关/失败，直接再来一局
-        endTitle.textContent = youLose ? `你输了` : `🎉 你赢了！`;
-        endSubtitle.textContent = youLose ? `你手里留着"王八牌"！` : (loser ? `${loser.name} 拿着王八牌。` : "");
-        $("#btnNextLevel").style.display = "none";
-        $("#btnPlayAgain").textContent = "再来一局";
-      } else if (youLose) {
+      if (youLose) {
+        // 失败：只能重新挑战本关
         endTitle.textContent = `第${currentLevel}关失败`;
         endSubtitle.textContent = `你手里留着"王八牌"！`;
         $("#btnNextLevel").style.display = "none";
+        $("#btnPlayAgain").style.display = "";
         $("#btnPlayAgain").textContent = "重新挑战";
       } else {
+        // 通过：只给"下一关"，关卡数一直往上叠加
         endTitle.textContent = `🎉 第${currentLevel}关通过！`;
         endSubtitle.textContent = loser ? `${loser.name} 拿着王八牌。` : "恭喜过关！";
-
-        // 如果不是第三关，显示"进入下一关"按钮
         $("#btnNextLevel").style.display = "block";
-        $("#btnPlayAgain").textContent = "重新挑战本关";
-        if (currentLevel < 3) {
-          $("#btnNextLevel").textContent = "进入下一关";
-        } else {
-          $("#btnNextLevel").textContent = "继续玩（随机局）";
-          endSubtitle.textContent = "🎊 恭喜通关全部三关！";
-        }
+        $("#btnNextLevel").textContent = currentLevel < 3 ? "进入下一关" : "下一关（困难加倍）";
+        $("#btnPlayAgain").style.display = "none";
       }
 
       endOverlay.classList.remove("hidden");
