@@ -923,6 +923,14 @@ input[type="number"]:focus {
 /* 按钮在设计稿里的位置：进入下一关 (326,520) 445×138；X (956,73) 94×96 */
 .winOverlay .winNext { left: 29.264%; top: 69.241%; width: 39.946%; height: 18.375%; }
 .winOverlay .winClose { left: 85.817%; top: 9.720%; width: 8.438%; height: 12.783%; }
+/* 失败面板：底图 1080×730，比例和按钮位置跟胜利面板略有不同（重试 (314,505) 445×138；X (948,54) 93×95） */
+#loseOverlay .winPanel {
+  width: min(92vw, 680px, calc(88vh * 1080 / 730));
+  aspect-ratio: 1080 / 730;
+}
+#loseOverlay .winNext { left: 29.074%; top: 69.178%; width: 41.204%; height: 18.904%; }
+#loseOverlay .winClose { left: 87.778%; top: 7.397%; width: 8.611%; height: 13.014%; }
+
 @keyframes winPop {
   0% { transform: scale(0.6); opacity: 0; }
   60% { transform: scale(1.04); opacity: 1; }
