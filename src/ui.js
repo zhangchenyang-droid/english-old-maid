@@ -320,11 +320,11 @@ function renderSeats(game, opts = {}) {
     const p = game.players[i];
     const s = seatByIdx[i];
     if (!s) continue;
-    s.name.innerHTML = `${escapeHtml(p.name)} ${p.kind === "ai" ? "<span class=\"pill\">AI</span>" : "<span class=\"pill\">玩家</span>"}`;
+    s.name.innerHTML = `${escapeHtml(p.name)}${p.kind === "ai" ? "" : " <span class=\"pill\">玩家</span>"}`;
 
     // 🆕 显示剩余手牌数量
     if (p.out) {
-      s.count.innerHTML = '<span class="countText">已出完</span>';
+      s.count.innerHTML = '<span class="countText">0</span>';
     } else {
       // 所有玩家：仅显示剩余手牌数量，用span包装以支持独立缩放
       s.count.innerHTML = `<span class="countText">${p.hand.length}</span>`;
@@ -1601,7 +1601,7 @@ function animateAiJokerDraw(fromPlayerIdx, toPlayerIdx, drawnCard, onComplete) {
     nameText.style.pointerEvents = "none";
     nameText.style.opacity = "0";
     nameText.textContent = `王八牌 → ${toPlayerName}`;
-    document.body.appendChild(nameText);
+    // 不再显示"王八牌 → 某某"小字（元素保留但不挂到页面上，后面的动画/移除都无影响）
 
     // 阶段1：飞到屏幕中间 + 亮相0.8s
     const dist1 = Math.sqrt(Math.pow(centerX - startX, 2) + Math.pow(centerY - startY, 2));
@@ -1871,7 +1871,7 @@ function animateJokerDrawFromPoint(startX, startY, toPlayerIdx, onComplete) {
     nameText.style.pointerEvents = "none";
     nameText.style.opacity = "0";
     nameText.textContent = `王八牌 → ${activeGame?.players?.[toPlayerIdx]?.name || ""}`;
-    document.body.appendChild(nameText);
+    // 不再显示"王八牌 → 某某"小字
 
     // 阶段1：飞到屏幕中间 + 亮相0.8s (一个完整动画)
     // 计算到屏幕中间的距离
@@ -2239,7 +2239,6 @@ function executeFallbackJokerReveal(game, playerIndex, onComplete, sharedOverlay
           <div class="imgWrap"><img class="cardImg" src="./assets/joker.png" alt="joker" /></div>
         </div>
       </div>
-      <div class="revealTo">王八牌 → ${escapeHtml(name)}</div>
     </div>
   `;
 
@@ -2348,7 +2347,6 @@ function showDrawRevealAndFly(game, drawnCard, playerIndex) {
           <div class="imgWrap"><img class="cardImg" src="./assets/joker.png" alt="joker" /></div>
         </div>
       </div>
-      <div class="revealTo">王八牌 → ${escapeHtml(name)}</div>
     `;
   } else {
     msg.innerHTML = `
@@ -2756,6 +2754,7 @@ function initUi(imagePairs = []) {
   let isDealing = false;
   let openingDone = false; // 开场（发牌、王八牌亮相、AI 自动出对子）是否已结束；结束前不弹操作提示
   let humanDrawStarted = false; // 本回合玩家已经开始抽牌（按下了上家牌堆），抽牌提示不再弹出
+  let humanDrawInFlight = false; // 已选好要抽的牌、牌还在飞向手牌（落地前游戏数据仍是"没抽"），这时不能再打开抽牌界面
   let suppressHandClickUntil = 0;
 
   function advancePastOutPlayers() {
@@ -3788,6 +3787,7 @@ function initUi(imagePairs = []) {
     isDealing = true;
     openingDone = false;
     humanDrawStarted = false;
+    humanDrawInFlight = false;
     Sound.startBgm();
     renderSeats(game, { deal: true });
     renderDiscardPile(game);
@@ -4366,8 +4366,8 @@ function initUi(imagePairs = []) {
       console.log(">>> 当前玩家不是人类或已出局");
       return;
     }
-    if (game.turnHasDrawn) {
-      console.log(">>> 本回合已经抽过牌了");
+    if (game.turnHasDrawn || humanDrawInFlight) {
+      console.log(">>> 本回合已经抽过牌了 / 抽的牌还在飞");
       return;
     }
     const upstreamIdx = window.Game.getUpstreamPlayerIndex(game);
@@ -4462,6 +4462,7 @@ function initUi(imagePairs = []) {
         if (game.turnHasDrawn) return;
         if (drawRow.dataset.picked === "1") return; // 已经选过一张（拖动松手和原生点击可能各触发一次）
         drawRow.dataset.picked = "1";
+        humanDrawInFlight = true;
         Sound.play("select");
         markHumanAction();
 
@@ -5680,6 +5681,7 @@ function initUi(imagePairs = []) {
     const b = e.target.closest(".seatHand[data-from-player-index]");
     if (!b) return;
     if (!game || game.gameOver) return;
+    if (humanDrawInFlight) return;
     const current = game.players[game.currentPlayerIndex];
     if (current.kind !== "human") return;
     const fromIdx = Number(b.dataset.fromPlayerIndex);
@@ -5807,6 +5809,8 @@ function initUi(imagePairs = []) {
         renderDiscardPile(game);
         renderAction(game, settings);
         showLastEvent(game, settings);
+        // 这一对出完游戏就结束了（场上只剩乌龟牌）：renderAll 负责弹胜利面板/失败弹窗，原来这里漏了，界面会卡住
+        if (game.gameOver) renderAll(game, settings);
       }, 500); // 略长于自适应动画时长（420ms）
 
       clearSelection();
@@ -5860,6 +5864,7 @@ function initUi(imagePairs = []) {
       runAiLoop._t = null;
       clearHintHighlight();
       clearHintHand();
+      clearEndTurnHint(); // 结束回合按钮上的提示小手也收掉
 
       const loser = window.Game.findJokerHolder(g.players);
       const youLose = loser && loser.id === g.players[0].id;
@@ -5888,6 +5893,7 @@ function initUi(imagePairs = []) {
       lastTurnPlayerId = pid;
       if (g.players[g.currentPlayerIndex]?.kind === "human") {
         humanDrawStarted = false; // 新的一回合
+        humanDrawInFlight = false;
         markHumanAction();
       } else {
         // not human turn: stop hints
