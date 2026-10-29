@@ -103,6 +103,90 @@ const pendingDiscardIds = new Set();
 // 当前这局游戏（给动画函数算落点用；不挂到 window.game，以免激活其他依赖它的旧逻辑）
 let activeGame = null;
 
+// ===== 背景音乐 + 音效 =====
+// 手机浏览器要求在用户点按后才能出声：第一次点按时解锁 AudioContext；音效用 Web Audio 播（可叠加、低延迟），背景音乐用 <audio> 循环
+const Sound = (() => {
+  const FILES = {
+    deal: "./assets/audio/deal.mp3",
+    draw: "./assets/audio/draw.mp3",
+    discard: "./assets/audio/discard.mp3",
+  };
+  // 素材原始响度差别很大（抽牌比发牌响约 18dB），这里分别配平
+  const GAIN = { deal: 1.0, draw: 0.35, discard: 0.9 };
+  const BGM_VOLUME = 0.3;
+
+  let muted = false;
+  try { muted = localStorage.getItem("oldMaidMuted") === "1"; } catch (e) {}
+  let ctx = null;
+  let bgmWanted = false;
+  const raw = {};
+  const buffers = {};
+  const lastPlay = {};
+
+  // 页面加载时先把音效文件下好（很小），解锁后再解码
+  for (const [name, url] of Object.entries(FILES)) {
+    raw[name] = fetch(url).then((r) => r.arrayBuffer()).catch(() => null);
+  }
+
+  const bgm = new Audio("./assets/audio/bgm.mp3");
+  bgm.loop = true;
+  bgm.volume = BGM_VOLUME;
+  bgm.preload = "auto";
+
+  function unlock() {
+    if (!ctx) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return;
+      ctx = new AC();
+      for (const name of Object.keys(FILES)) {
+        raw[name].then((ab) => {
+          if (!ab) return;
+          ctx.decodeAudioData(ab.slice(0), (buf) => { buffers[name] = buf; }, () => {});
+        });
+      }
+    }
+    if (ctx.state === "suspended") ctx.resume();
+  }
+
+  function play(name, minGap = 40) {
+    if (muted || !ctx || !buffers[name]) return;
+    const now = performance.now();
+    if (now - (lastPlay[name] || 0) < minGap) return; // 同一音效太密时合并，避免糊成一片
+    lastPlay[name] = now;
+    const src = ctx.createBufferSource();
+    src.buffer = buffers[name];
+    src.playbackRate.value = 0.95 + Math.random() * 0.1; // 轻微变调，连续播不机械
+    const g = ctx.createGain();
+    g.gain.value = GAIN[name] || 1;
+    src.connect(g);
+    g.connect(ctx.destination);
+    src.start();
+  }
+
+  function startBgm() {
+    bgmWanted = true;
+    if (!muted && !document.hidden) bgm.play().catch(() => {});
+  }
+
+  function setMuted(m) {
+    muted = m;
+    try { localStorage.setItem("oldMaidMuted", m ? "1" : "0"); } catch (e) {}
+    if (m) bgm.pause();
+    else if (bgmWanted) bgm.play().catch(() => {});
+  }
+
+  for (const ev of ["pointerdown", "touchstart", "keydown"]) {
+    document.addEventListener(ev, unlock, { capture: true, passive: true });
+  }
+  // 切到后台/锁屏时暂停音乐，回来继续
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) bgm.pause();
+    else if (bgmWanted && !muted) bgm.play().catch(() => {});
+  });
+
+  return { play, startBgm, setMuted, isMuted: () => muted };
+})();
+
 // 飞行中的牌：目标手牌要预留的空位数、源手牌里已经飞走（隐藏）的牌。
 // 飞行途中不管谁刷新手牌，都按这些信息排位，不会把让出的空位收回去
 const incomingSlots = [0, 0, 0, 0];
@@ -487,6 +571,7 @@ function flyToDiscard(fromEl, game) {
   });
 
   anim.onfinish = () => {
+    Sound.play("discard", 80);
     pendingDiscardIds.delete(cardId);
     const landed = document.querySelector(`#discardPile .discardCard[data-card-id="${CSS.escape(cardId)}"]`);
     if (landed) landed.style.visibility = "";
@@ -820,6 +905,7 @@ function animateDrawCardFly(fromPlayerIdx, toPlayerIdx, drawnCard, onComplete) {
 
     // 执行动画
     console.log(`[animateDrawCardFly] 开始执行动画, keyframes数量:`, keyframes.length);
+    Sound.play("draw");
     const anim = flipContainer.animate(keyframes, {
       duration: 560,
       easing: "linear", // 缓动已在关键帧中手动实现
@@ -995,6 +1081,7 @@ function animateDrawCardFlyFromPoint(startX, startY, toPlayerIdx, drawnCard, cur
 
     // 执行动画
     console.log(`[animateDrawCardFlyFromPoint] 开始动画, 距离=${Math.round(dist)}px, 时长=${Math.round(duration)}ms`);
+    Sound.play("draw");
     const anim = flyingCard.animate(keyframes, {
       duration: duration,
       easing: "linear" // 缓动已在关键帧中手动实现
@@ -1293,6 +1380,7 @@ function animateAiDiscardPair(playerIdx, card1, card2, fromRectOverride, onCompl
       // 正面内容已在初始化时填充，不需要90度检测了
 
       outerAnim.onfinish = () => {
+        Sound.play("discard", 80);
         // 立即移除飞行元素（renderDiscardPile 会无缝接管显示）
         outerContainer.remove();
         completed++;
@@ -1488,6 +1576,7 @@ function animateAiJokerDraw(fromPlayerIdx, toPlayerIdx, drawnCard, onComplete) {
     ];
 
     // 外层容器动画：位置和缩放
+    Sound.play("draw");
     const outerAnim = outerContainer.animate(outerKeyframes1, {
       duration: totalDuration1,
       easing: "linear", // 使用关键帧内的easing
@@ -1755,6 +1844,7 @@ function animateJokerDrawFromPoint(startX, startY, toPlayerIdx, onComplete) {
       });
     }
 
+    Sound.play("draw");
     const anim1 = flyingCard.animate(keyframes1, {
       duration: totalDuration1,
       easing: "linear",
@@ -2580,6 +2670,8 @@ function initUi(imagePairs = []) {
   let hintHandT = null; // 提示手定时器
   let lastTurnPlayerId = null;
   let isDealing = false;
+  let openingDone = false; // 开场（发牌、王八牌亮相、AI 自动出对子）是否已结束；结束前不弹操作提示
+  let humanDrawStarted = false; // 本回合玩家已经开始抽牌（按下了上家牌堆），抽牌提示不再弹出
   let suppressHandClickUntil = 0;
 
   function advancePastOutPlayers() {
@@ -3375,9 +3467,15 @@ function initUi(imagePairs = []) {
     const upstreamIdx = window.Game.getUpstreamPlayerIndex(game);
     const upstreamHandEl = seatHandElByPlayerIndex(upstreamIdx);
 
-    // 找到上家的第一张背面牌
-    const targetEl = upstreamHandEl.querySelector('.miniBack');
-    if (!targetEl) return;
+    // 上家整个牌堆的中心（所有牌背的包围盒中心）
+    const backs = Array.from(upstreamHandEl.querySelectorAll('.miniBack'));
+    if (backs.length === 0) return;
+    let l = Infinity, t = Infinity, r = -Infinity, b = -Infinity;
+    for (const el of backs) {
+      const rc = el.getBoundingClientRect();
+      l = Math.min(l, rc.left); t = Math.min(t, rc.top);
+      r = Math.max(r, rc.right); b = Math.max(b, rc.bottom);
+    }
 
     // 创建提示手元素
     const hintHand = document.createElement("div");
@@ -3385,18 +3483,23 @@ function initUi(imagePairs = []) {
     hintHand.className = "hintHand clicking"; // 立即添加点击动画类
     document.body.appendChild(hintHand);
 
-    // 获取目标卡牌位置
-    const targetRect = targetEl.getBoundingClientRect();
-    const handSize = 60; // 提示手图片大小
+    // 让指尖（而不是图片左上角/中心）落在牌堆中心
+    placeHintHandFingertip(hintHand, (l + r) / 2, (t + b) / 2);
+  }
 
-    // 找到提示手图片的点击点（根据提示手图片调整）
-    // 指尖大约在图片的 50% 宽度、65% 高度位置（往右下调整）
-    const fingerTipOffsetX = handSize * 0.5;
-    const fingerTipOffsetY = handSize * 0.65;
-
-    // 将指尖对准卡牌中心
-    hintHand.style.left = `${targetRect.left + targetRect.width / 2 - fingerTipOffsetX}px`;
-    hintHand.style.top = `${targetRect.top + targetRect.height / 2 - fingerTipOffsetY}px`;
+  // 提示手图片 hint-hand.png 原图 361×410，指尖点击点约在 (55, 18)。
+  // .hintHand 是 60×60 盒子、background-size: contain 居中，算出指尖在盒子里的位置，
+  // 再把盒子摆到"指尖 = 目标点"，点击动画也以指尖为缩放中心，按下时指尖不漂移
+  function placeHintHandFingertip(hintHand, x, y) {
+    const IMG_W = 361, IMG_H = 410, TIP_X = 55, TIP_Y = 18;
+    const box = hintHand.offsetWidth || 60;
+    const boxH = hintHand.offsetHeight || 60;
+    const scale = Math.min(box / IMG_W, boxH / IMG_H);
+    const tipX = (box - IMG_W * scale) / 2 + TIP_X * scale;
+    const tipY = (boxH - IMG_H * scale) / 2 + TIP_Y * scale;
+    hintHand.style.left = `${x - tipX}px`;
+    hintHand.style.top = `${y - tipY}px`;
+    hintHand.style.transformOrigin = `${tipX}px ${tipY}px`;
   }
 
   // 显示提示手指向玩家手中的配对牌
@@ -3485,13 +3588,20 @@ function initUi(imagePairs = []) {
   function scheduleHintFromNow() {
     if (hintT) return; // already scheduled for current inactivity window
     if (!game || game.gameOver) return;
+    if (!openingDone) return; // 开场动画还在播，不提示（开场结束时会再调用一次）
     const current = game.players[game.currentPlayerIndex];
     if (!current || current.kind !== "human") return;
 
     const stamp = lastHumanActionAt;
+    // 该抽牌了（手里没对子、本回合还没抽）：提示马上出现，不再等 3+3 秒
+    const needDraw = !game.turnHasDrawn && !window.Game.findAnyPairInHand(game.players[0].hand);
+    if (needDraw && humanDrawStarted) return; // 正在抽牌（抽牌界面打开 / 牌在飞），别把小手盖上去
+    const firstDelay = needDraw ? 350 : HINT_MS; // 350ms：等上家牌堆的排位过渡结束，小手才对得准
+    const handDelay = needDraw ? 0 : HINT_HAND_MS;
     hintT = window.setTimeout(() => {
       // If user acted since scheduling, do nothing.
       if (lastHumanActionAt !== stamp) return;
+      if (needDraw && humanDrawStarted) return;
 
       // 检查手里是否有可配对的牌
       const hasPair = window.Game.findAnyPairInHand(game.players[0].hand);
@@ -3520,8 +3630,8 @@ function initUi(imagePairs = []) {
           // 其他情况：提示卡牌
           showHintHand();
         }
-      }, HINT_HAND_MS);
-    }, HINT_MS);
+      }, handDelay);
+    }, firstDelay);
   }
 
   function markHumanAction() {
@@ -3591,6 +3701,9 @@ function initUi(imagePairs = []) {
     selected = [];
     // Deal animation: render seats, then slide cards in from bottom with delays (no opacity changes).
     isDealing = true;
+    openingDone = false;
+    humanDrawStarted = false;
+    Sound.startBgm();
     renderSeats(game, { deal: true });
     renderDiscardPile(game);
     renderAction(game, settings);
@@ -3607,6 +3720,11 @@ function initUi(imagePairs = []) {
     for (const el of allFace) {
       const idx = Number(el.dataset.dealIndex || 0);
       el.style.animationDelay = `${base + idx * stepHuman}ms`;
+    }
+    // 发牌音效：跟着玩家手牌一张张飞入的节奏
+    for (const el of allFace) {
+      const idx = Number(el.dataset.dealIndex || 0);
+      setTimeout(() => Sound.play("deal", 30), base + idx * stepHuman);
     }
     // AI: simple stagger per seat
     const stepAi = 18;
@@ -3836,6 +3954,7 @@ function initUi(imagePairs = []) {
 
     function proceedAfterInitialPairs() {
       // 配对完成，开始游戏
+      openingDone = true;
       renderAll(game, settings);
       runAiLoop(game, settings);
       // 重置提示计时器，从这一刻开始计算3秒
@@ -3887,6 +4006,17 @@ function initUi(imagePairs = []) {
   });
 
   btnStart.addEventListener("click", startNewGame);
+
+  // 声音开关（记在本机，下次打开保持）
+  const btnSound = document.getElementById("btnSound");
+  if (btnSound) {
+    const syncSoundBtn = () => { btnSound.textContent = Sound.isMuted() ? "声音：关" : "声音：开"; };
+    syncSoundBtn();
+    btnSound.addEventListener("click", () => {
+      Sound.setMuted(!Sound.isMuted());
+      syncSoundBtn();
+    });
+  }
 
   // 设置面板的重置进度按钮
   const btnResetLevel = document.getElementById("btnResetLevel");
@@ -4630,10 +4760,19 @@ function initUi(imagePairs = []) {
     }
   }
 
+  // 打开抽牌界面又取消（没抽）：恢复抽牌提示
+  function cancelDrawOverlay() {
+    closeDrawOverlay();
+    if (game && !game.turnHasDrawn) {
+      humanDrawStarted = false;
+      markHumanAction();
+    }
+  }
+
   drawOverlay.addEventListener("click", (e) => {
-    if (e.target === drawOverlay) closeDrawOverlay();
+    if (e.target === drawOverlay) cancelDrawOverlay();
   });
-  btnDrawClose.addEventListener("click", closeDrawOverlay);
+  btnDrawClose.addEventListener("click", cancelDrawOverlay);
 
   // Draw overlay: keep custom scrollbar perfectly in sync with drawRow.scrollLeft (and allow dragging).
   // Rebuilt model (for maximum smoothness):
@@ -5361,6 +5500,7 @@ function initUi(imagePairs = []) {
     const current = game.players[game.currentPlayerIndex];
     if (current.kind !== "human") return;
     const fromIdx = Number(b.dataset.fromPlayerIndex);
+    humanDrawStarted = true; // 先标记，markHumanAction 安排提示时就会跳过抽牌提示
     markHumanAction();
 
     // 记录当前点击的元素
@@ -5562,6 +5702,7 @@ function initUi(imagePairs = []) {
     if (pid !== lastTurnPlayerId) {
       lastTurnPlayerId = pid;
       if (g.players[g.currentPlayerIndex]?.kind === "human") {
+        humanDrawStarted = false; // 新的一回合
         markHumanAction();
       } else {
         // not human turn: stop hints
