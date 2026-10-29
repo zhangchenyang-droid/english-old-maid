@@ -2792,7 +2792,7 @@ function initUi(imagePairs = []) {
       discardPile: 0.82,
     },
     handCount: {
-      top: { x: 86, y: 65, textX: 62, textY: 0 },
+      top: { x: 86, y: 61, textX: 62, textY: 0 },
       left: { x: 40, y: -99, textX: 63, textY: -7 },
       right: { x: -170, y: -104, textX: 62, textY: -8 },
       bottom: { x: 18, y: -11, textX: 62, textY: 0 },
@@ -2805,10 +2805,10 @@ function initUi(imagePairs = []) {
       y: 27,
     },
     zoneName: {
-      top: { x: -64, y: 59 },
-      left: { x: 17, y: -100 },
-      right: { x: 67, y: -88 },
-      bottom: { x: -12, y: 19 },
+      top: { x: -27, y: 59 },
+      left: { x: 56, y: -100 },
+      right: { x: 100, y: -88 },
+      bottom: { x: -7, y: 19 },
     },
   };
 
