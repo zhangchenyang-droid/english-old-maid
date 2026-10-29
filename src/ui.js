@@ -110,14 +110,16 @@ const Sound = (() => {
     deal: "./assets/audio/deal.mp3",
     draw: "./assets/audio/draw.mp3",
     discard: "./assets/audio/discard.mp3",
+    win: "./assets/audio/win.mp3",
   };
   // 素材原始响度差别很大（抽牌比发牌响约 18dB），这里分别配平
-  const GAIN = { deal: 0.8, draw: 0.35, discard: 0.9 };
+  const GAIN = { deal: 0.8, draw: 0.35, discard: 0.9, win: 1.0 };
   const BGM_VOLUME = 0.3;
 
   let muted = false;
   try { muted = localStorage.getItem("oldMaidMuted") === "1"; } catch (e) {}
   let ctx = null;
+  let bgmGain = null;
   let bgmWanted = false;
   const raw = {};
   const buffers = {};
@@ -146,6 +148,7 @@ const Sound = (() => {
         node.connect(g);
         g.connect(ctx.destination);
         bgm.volume = 1;
+        bgmGain = g;
       } catch (e) {}
       for (const name of Object.keys(FILES)) {
         raw[name].then((ab) => {
@@ -213,6 +216,17 @@ const Sound = (() => {
     tone(ctx.currentTime, 760, 380, 0.09, 0.22);
   }
 
+  // 胜利：播欢呼，同时把背景音乐压低，播完再慢慢回来
+  function win() {
+    play("win", 300);
+    if (!ctx || !bgmGain || muted) return;
+    const t = ctx.currentTime;
+    const dur = buffers.win ? buffers.win.duration : 3.5;
+    bgmGain.gain.cancelScheduledValues(t);
+    bgmGain.gain.setTargetAtTime(BGM_VOLUME * 0.3, t, 0.08);
+    bgmGain.gain.setTargetAtTime(BGM_VOLUME, t + dur, 0.6);
+  }
+
   function startBgm() {
     bgmWanted = true;
     if (ctx && ctx.state === "suspended") ctx.resume();
@@ -248,7 +262,7 @@ const Sound = (() => {
     }
   });
 
-  return { play, confirm, invalid, startBgm, setMuted, isMuted: () => muted };
+  return { play, confirm, invalid, win, startBgm, setMuted, isMuted: () => muted };
 })();
 
 // 飞行中的牌：目标手牌要预留的空位数、源手牌里已经飞走（隐藏）的牌。
@@ -3763,6 +3777,7 @@ function initUi(imagePairs = []) {
     $("#setup").classList.add("hidden");
     $("#game").classList.remove("hidden");
     endOverlay.classList.add("hidden");
+    $("#winOverlay").classList.add("hidden");
     updateTuneButtonState();
     selected = [];
     // Deal animation: render seats, then slide cards in from bottom with delays (no opacity changes).
@@ -4122,19 +4137,8 @@ function initUi(imagePairs = []) {
     }
   }
 
-  btnRestart.addEventListener("click", () => {
-    // 返回设置时重置关卡
-    window.__GAME_ROUND_TRACKER__.currentLevel = 1;
-    window.__GAME_ROUND_TRACKER__.roundNumber = 0;
-
-    // 清除 localStorage
-    try {
-      localStorage.removeItem("gameRoundTracker");
-      console.log(`[关卡切换] 点击返回设置，已重置为第1关`);
-    } catch (e) {
-      console.error(`[关卡切换] 清除失败:`, e);
-    }
-
+  // 回到设置页（不改关卡进度）
+  function showSetupScreen() {
     $("#game").classList.add("hidden");
     $("#setup").classList.remove("hidden");
     $("#message").innerHTML = "";
@@ -4148,7 +4152,40 @@ function initUi(imagePairs = []) {
     window.clearTimeout(runAiLoop._t);
     runAiLoop._t = null;
     endOverlay.classList.add("hidden");
+    $("#winOverlay").classList.add("hidden");
     updateTuneButtonState();
+  }
+
+  btnRestart.addEventListener("click", () => {
+    // 返回设置时重置关卡
+    window.__GAME_ROUND_TRACKER__.currentLevel = 1;
+    window.__GAME_ROUND_TRACKER__.roundNumber = 0;
+
+    // 清除 localStorage
+    try {
+      localStorage.removeItem("gameRoundTracker");
+      console.log(`[关卡切换] 点击返回设置，已重置为第1关`);
+    } catch (e) {
+      console.error(`[关卡切换] 清除失败:`, e);
+    }
+
+    showSetupScreen();
+  });
+
+  // 胜利面板：进入下一关
+  $("#btnWinNext").addEventListener("click", () => {
+    $("#winOverlay").classList.add("hidden");
+    $("#btnNextLevel").click();
+  });
+
+  // 胜利面板：X —— 已经过关，进度记到下一关，回到设置页（再点"开始游戏"就从下一关开始）
+  $("#btnWinClose").addEventListener("click", () => {
+    $("#winOverlay").classList.add("hidden");
+    const tr = window.__GAME_ROUND_TRACKER__;
+    tr.currentLevel++;
+    tr.roundNumber = tr.currentLevel - 1;
+    try { localStorage.setItem("gameRoundTracker", JSON.stringify(tr)); } catch (e) {}
+    showSetupScreen();
   });
 
   btnPlayAgain.addEventListener("click", () => {
@@ -5759,12 +5796,10 @@ function initUi(imagePairs = []) {
         $("#btnPlayAgain").style.display = "";
         $("#btnPlayAgain").textContent = "重新挑战";
       } else {
-        // 通过：只给"下一关"，关卡数一直往上叠加
-        endTitle.textContent = `🎉 第${currentLevel}关通过！`;
-        endSubtitle.textContent = loser ? `${loser.name} 拿着王八牌。` : "恭喜过关！";
-        $("#btnNextLevel").style.display = "block";
-        $("#btnNextLevel").textContent = currentLevel < 3 ? "进入下一关" : "下一关（困难加倍）";
-        $("#btnPlayAgain").style.display = "none";
+        // 通过：显示胜利面板（只有"进入下一关"和 X），播鸟群欢呼
+        $("#winOverlay").classList.remove("hidden");
+        Sound.win();
+        return;
       }
 
       endOverlay.classList.remove("hidden");

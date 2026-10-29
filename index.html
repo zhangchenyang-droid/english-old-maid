@@ -8,7 +8,7 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <title>抽乌龟（儿童英语学习版）</title>
     <link rel="manifest" href="./manifest.json" />
-    <link rel="stylesheet" href="./styles.css?v=20261029f" />
+    <link rel="stylesheet" href="./styles.css?v=20261029g" />
   </head>
   <body>
     <div class="app">
@@ -137,6 +137,14 @@
           </div>
         </div>
 
+        <!-- 胜利面板：底图 + 叠在上面的"进入下一关"和 X 两个按钮（位置按设计稿像素换算成百分比） -->
+        <div id="winOverlay" class="winOverlay hidden" role="dialog" aria-modal="true" aria-label="胜利">
+          <div class="winPanel">
+            <img class="winPanelBg" src="./assets/ui_buttons/win-panel.webp" alt="胜利！" draggable="false" />
+            <button id="btnWinNext" class="winBtn winNext" type="button" aria-label="进入下一关"><img src="./assets/ui_buttons/win-next.png" alt="" draggable="false" /></button>
+            <button id="btnWinClose" class="winBtn winClose" type="button" aria-label="关闭"><img src="./assets/ui_buttons/win-close.png" alt="" draggable="false" /></button>
+          </div>
+        </div>
         <div id="endOverlay" class="endOverlay hidden" role="dialog" aria-modal="true">
           <div class="endCard">
             <div id="endTitle" class="endTitle"></div>
@@ -177,12 +185,12 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 
     <!-- deck -->
-    <script src="./deck/image_pairs.js?v=20261029f"></script>
+    <script src="./deck/image_pairs.js?v=20261029g"></script>
     <!-- Joker summon effect -->
-    <script src="./src/joker-summon.js?v=20261029f"></script>
+    <script src="./src/joker-summon.js?v=20261029g"></script>
     <!-- app (no modules so file:// works) -->
-    <script src="./src/game.js?v=20261029f"></script>
-    <script src="./src/ui.js?v=20261029f"></script>
+    <script src="./src/game.js?v=20261029g"></script>
+    <script src="./src/ui.js?v=20261029g"></script>
     <script>
       // 图片预加载功能
       function preloadImages(imagePairs, onProgress, onComplete) {
@@ -206,6 +214,9 @@
         images.push('./assets/ui_buttons/hand-count.png');
         images.push('./assets/ui_buttons/hint-hand.png');
         images.push('./assets/ui_buttons/round-start-panel.png?v=zh1');
+        images.push('./assets/ui_buttons/win-panel.webp');
+        images.push('./assets/ui_buttons/win-next.png');
+        images.push('./assets/ui_buttons/win-close.png');
 
         let loaded = 0;
         const total = images.length;
