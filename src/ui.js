@@ -4124,7 +4124,7 @@ function initUi(imagePairs = []) {
     });
   }
 
-  // 管理员模式：只有用 ?admin=karnoz 打开过的设备才能用"重置进度"和"配对数量"
+  // 管理员模式：只有用 ?admin=karnoz 打开过的设备才能改"配对数量"
   // （打开一次后记在本机 localStorage，之后普通网址也生效；?admin=off 取消）
   try {
     const adminParam = new URLSearchParams(location.search).get("admin");
@@ -4134,7 +4134,8 @@ function initUi(imagePairs = []) {
   let isAdmin = false;
   try { isAdmin = localStorage.getItem("oldMaidAdmin") === "1"; } catch (e) {}
   if (!isAdmin) {
-    for (const el of [btnResetLevel, pairCountInput, pairCountNum]) {
+    // "重置进度"恢复为所有人可用；只有配对数量仍限管理员
+    for (const el of [pairCountInput, pairCountNum]) {
       if (!el) continue;
       el.disabled = true;
       el.style.opacity = "0.4";
