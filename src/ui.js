@@ -58,6 +58,77 @@ function seatEls() {
   };
 }
 
+// 手牌第 idx 张（共 n 张）的布局：玩家扇形用 --x/--y/--rot，AI 牌堆用 --sx/--sy/--srot
+function applySlotVars(el, playerIdx, idx, n) {
+  const d = idx - (n - 1) / 2;
+  if (playerIdx === 0) {
+    const spread = Math.min(62, 920 / Math.max(1, n - 1));
+    el.style.setProperty("--x", `${d * spread}px`);
+    el.style.setProperty("--rot", `${d * 0.9}deg`);
+    el.style.setProperty("--y", `${Math.abs(d) * 0.8}px`);
+  } else if (playerIdx === 2) {
+    el.style.setProperty("--sx", `${d * 12}px`);
+    el.style.setProperty("--sy", `${d * 0.3}px`);
+    el.style.setProperty("--srot", "0deg");
+  } else {
+    el.style.setProperty("--sx", `${d * 0.3}px`);
+    el.style.setProperty("--sy", `${d * 9}px`);
+    el.style.setProperty("--srot", "90deg");
+  }
+}
+
+function slotAngle(playerIdx, idx, n) {
+  if (playerIdx === 0) return (idx - (n - 1) / 2) * 0.9;
+  return playerIdx === 2 ? 0 : 90;
+}
+
+// 量出手牌区"第 idx 张 / 共 n 张"那张牌的真实落点（屏幕中心、宽高、角度），让飞行牌精准落地
+function probeSlotPose(playerIdx, idx, n) {
+  const hand = seatHandElByPlayerIndex(playerIdx);
+  const el = document.createElement("div");
+  el.className = playerIdx === 0 ? "faceCard imgCard" : "miniBack";
+  applySlotVars(el, playerIdx, idx, n);
+  el.style.transition = "none";
+  el.style.visibility = "hidden";
+  hand.appendChild(el);
+  const r = el.getBoundingClientRect();
+  const pose = { cx: r.left + r.width / 2, cy: r.top + r.height / 2, w: el.offsetWidth, h: el.offsetHeight, ang: slotAngle(playerIdx, idx, n) };
+  el.remove();
+  return pose;
+}
+
+// 正在飞往弃牌堆、还没落地的牌：弃牌堆先把它们画出来但隐藏，落地再显示
+const pendingDiscardIds = new Set();
+
+// 当前这局游戏（给动画函数算落点用；不挂到 window.game，以免激活其他依赖它的旧逻辑）
+let activeGame = null;
+
+// 飞行中的牌：目标手牌要预留的空位数、源手牌里已经飞走（隐藏）的牌。
+// 飞行途中不管谁刷新手牌，都按这些信息排位，不会把让出的空位收回去
+const incomingSlots = [0, 0, 0, 0];
+const outgoingCardIds = new Set();
+
+function beginIncoming(playerIdx) {
+  const hand = seatHandElByPlayerIndex(playerIdx);
+  const sel = playerIdx === 0 ? ":scope > .faceCard" : ":scope > .miniBack";
+  const els = hand ? Array.from(hand.querySelectorAll(sel)).filter((el) => !outgoingCardIds.has(el.dataset.cardId)) : [];
+  incomingSlots[playerIdx]++;
+  els.forEach((el, k) => applySlotVars(el, playerIdx, k, els.length + incomingSlots[playerIdx]));
+}
+
+function endIncoming(playerIdx) {
+  incomingSlots[playerIdx] = Math.max(0, incomingSlots[playerIdx] - 1);
+}
+
+// 玩家手里的牌被抽走：原牌藏起来，其余牌让位
+function beginOutgoing(srcEl) {
+  outgoingCardIds.add(srcEl.dataset.cardId);
+  srcEl.style.visibility = "hidden";
+  const hand = srcEl.parentElement;
+  const els = Array.from(hand.querySelectorAll(":scope > .faceCard")).filter((el) => !outgoingCardIds.has(el.dataset.cardId));
+  els.forEach((el, k) => applySlotVars(el, 0, k, els.length + incomingSlots[0]));
+}
+
 function renderSeats(game, opts = {}) {
   // 🎯 渲染前检查：如果剩余两人，触发最终检查
   const activePlayers = game.players.filter(p => !p.out);
@@ -106,50 +177,57 @@ function renderSeats(game, opts = {}) {
       continue;
     }
 
-    s.hand.innerHTML = "";
+    // 非发牌阶段复用已有的牌元素，只更新位置：牌会借 CSS transition 平滑滑到新位置，不再整手瞬移
+    if (dealMode) s.hand.innerHTML = "";
     if (i === 0) {
       // You: show face-up cards (selectable on table)
       const n = p.hand.length;
-      const center = (n - 1) / 2;
+      // 已飞走的牌不参与排位；正在飞来的牌预留空位
+      const layoutIds = p.hand.filter((c) => !outgoingCardIds.has(c.id)).map((c) => c.id);
+      const layoutN = layoutIds.length + incomingSlots[0];
+      const old = new Map();
+      for (const el of s.hand.querySelectorAll(":scope > .faceCard[data-card-id]")) old.set(el.dataset.cardId, el);
+      const ordered = [];
       for (let idx = 0; idx < n; idx++) {
         const card = p.hand[idx];
-        const div = document.createElement("div");
-        div.className = `faceCard ${card.type === "joker" ? "joker imgCard" : ""} ${card.type === "img" ? "imgCard" : ""}`;
-        div.dataset.cardId = card.id;
-        if (dealMode) div.dataset.dealIndex = String(idx);
-
-        // Fan layout (more readable: larger spacing between cards)
-        // Cap overall width to avoid spilling off the bottom plank.
-        const maxFanWidth = 920; // px (wider so text/images aren't covered)
-        const spread = Math.min(62, maxFanWidth / Math.max(1, n - 1));
-        const d = idx - center;
-        div.style.setProperty("--x", `${d * spread}px`);
-        div.style.setProperty("--rot", `${d * 0.9}deg`);
-        div.style.setProperty("--y", `${Math.abs(d) * 0.8}px`);
-        div.style.zIndex = String(100 + idx);
-
-        // Add expand animation class when joker is dealt
-        if (animateExpand) {
-          div.style.transition = "transform 300ms cubic-bezier(0.22, 1, 0.36, 1)";
-        }
-
-        if (card.type === "joker") {
-          div.dataset.corner = "";
-          div.innerHTML = `
-            <div class="cardContent">
-              <div class="imgWrap"><img class="cardImg" src="./assets/joker.png" alt="joker" draggable="false" /></div>
-            </div>
-          `;
+        let div = old.get(card.id);
+        if (div) {
+          old.delete(card.id);
+          div.style.opacity = "";
+          div.style.animationDelay = "";
+          if (!outgoingCardIds.has(card.id)) div.style.visibility = "";
         } else {
+          div = document.createElement("div");
+          div.dataset.cardId = card.id;
           div.dataset.corner = "";
+          const src = card.type === "joker" ? "./assets/joker.png" : escapeHtml(card.imgSrc);
           div.innerHTML = `
             <div class="cardContent">
-              <div class="imgWrap"><img class="cardImg" src="${escapeHtml(card.imgSrc)}" alt="card" draggable="false" /></div>
+              <div class="imgWrap"><img class="cardImg" src="${src}" alt="${card.type === "joker" ? "joker" : "card"}" draggable="false" /></div>
             </div>
           `;
         }
-        s.hand.appendChild(div);
+        div.className = `faceCard ${card.type === "joker" ? "joker imgCard" : ""} ${card.type === "img" ? "imgCard" : ""}`;
+        if (dealMode) div.dataset.dealIndex = String(idx);
+        if (outgoingCardIds.has(card.id)) div.style.visibility = "hidden";
+        else applySlotVars(div, 0, layoutIds.indexOf(card.id), layoutN);
+        div.style.zIndex = String(100 + idx);
+        // Add expand animation class when joker is dealt
+        div.style.transition = animateExpand ? "transform 300ms cubic-bezier(0.22, 1, 0.36, 1)" : "";
+        ordered.push(div);
       }
+      for (const el of old.values()) el.remove();
+      for (const id of Array.from(outgoingCardIds)) if (!p.hand.some((c) => c.id === id)) outgoingCardIds.delete(id);
+      // 只在顺序不对时才移动节点（移动节点会打断过渡）
+      const current = Array.from(s.hand.querySelectorAll(":scope > .faceCard"));
+      ordered.forEach((div, idx) => {
+        if (current[idx] !== div) {
+          s.hand.insertBefore(div, current[idx] || null);
+          current.splice(idx, 0, div);
+          const dup = current.indexOf(div, idx + 1);
+          if (dup >= 0) current.splice(dup, 1);
+        }
+      });
     } else {
       // AI: show backs only. If it's your turn and this AI is upstream, render full clickable backs.
       const isHumanTurn = game.players[game.currentPlayerIndex].kind === "human";
@@ -158,45 +236,33 @@ function renderSeats(game, opts = {}) {
       // Render as a pile like the reference: top zone piles sideways, left/right piles vertical.
       // 使用真实手牌数量
       const showN = p.hand.length;
-      const cCenter = (showN - 1) / 2;
       // Make the upstream pile clickable (tap pile -> open overlay).
       if (isUpstreamForDraw) s.hand.dataset.fromPlayerIndex = String(i);
       else s.hand.removeAttribute("data-from-player-index");
 
+      const backs = Array.from(s.hand.querySelectorAll(":scope > .miniBack"));
       for (let k = 0; k < showN; k++) {
-        const b = document.createElement("div");
+        let b = backs[k];
+        if (!b) {
+          b = document.createElement("div");
+          b.textContent = "";
+          s.hand.appendChild(b);
+        }
         b.className = "miniBack";
         if (dealMode) b.dataset.dealIndex = String(k);
-        b.textContent = "";
-        const d = k - cCenter;
-        let sx = 0;
-        let sy = 0;
-        let srot = 0;
-        if (i === 2) {
-          // top player: pile spreads to the left (as in reference)
-          sx = d * 12;
-          sy = d * 0.3;
-          srot = 0;
-        } else {
-          // left/right: pile spreads downward
-          sx = d * 0.3;
-          sy = d * 9;
-          // rotate 90° around each card's center for side players
-          srot = i === 1 || i === 3 ? 90 : 0;
-        }
-        b.style.setProperty("--sx", `${sx}px`);
-        b.style.setProperty("--sy", `${sy}px`);
-        b.style.setProperty("--srot", `${srot}deg`);
+        // 清掉甩牌/展开抽牌界面等动画留下的内联样式（原来靠每次重建清掉）
+        b.style.opacity = "";
+        b.style.animationDelay = "";
+        applySlotVars(b, i, k, showN + incomingSlots[i]);
         b.style.transitionDelay = `0ms`;
         b.style.zIndex = String(10 + k);
 
         // Add expand animation when joker is dealt
-        if (animateExpand) {
-          b.style.transition = "left 300ms cubic-bezier(0.22, 1, 0.36, 1), top 300ms cubic-bezier(0.22, 1, 0.36, 1)";
-        }
-
-        s.hand.appendChild(b);
+        b.style.transition = animateExpand
+          ? "left 300ms cubic-bezier(0.22, 1, 0.36, 1), top 300ms cubic-bezier(0.22, 1, 0.36, 1)"
+          : "";
       }
+      for (let k = showN; k < backs.length; k++) backs[k].remove();
     }
   }
 }
@@ -260,7 +326,9 @@ function renderDiscardPile(game) {
     const rotation = rotJitter(c.id, z);
     div.style.transform = `translate(-50%, -50%) rotate(${rotation}deg)`;
     div.style.zIndex = String(z);
-    console.log(`[渲染弃牌] cardId=${c.id}, z=${z}, rotation=${rotation.toFixed(2)}°`);
+    div.dataset.cardId = c.id;
+    div.dataset.rot = String(rotation);
+    if (pendingDiscardIds.has(c.id)) div.style.visibility = "hidden";
 
     if (isJoker) {
       div.dataset.corner = "";
@@ -283,74 +351,72 @@ function renderDiscardPile(game) {
   const baseY = 52;
 
   // Render bottom-to-top so newer cards cover older ones.
+  // z 用整堆里的绝对序号（和 getDiscardPileZIndex 一致），超过 MAX_DEPTH 后角度也不会和飞行时对不上
+  const leftSkip = leftPile.length - leftShown.length;
+  const rightSkip = rightPile.length - rightShown.length;
   for (let i = 0; i < leftShown.length; i++) {
-    const c = leftShown[i];
-    renderCardFaceUp(c, leftX, baseY, 10 + i);
+    renderCardFaceUp(leftShown[i], leftX, baseY, 10 + leftSkip + i);
   }
   for (let i = 0; i < rightShown.length; i++) {
-    const c = rightShown[i];
-    renderCardFaceUp(c, rightX, baseY, 100 + i);
+    renderCardFaceUp(rightShown[i], rightX, baseY, 100 + rightSkip + i);
   }
 }
 
 // no TTS in standard card mode
 
-function flyToDiscard(fromEl) {
-  const pile = $("#discardPile");
-  const from = fromEl.getBoundingClientRect();
-  const to = pile.getBoundingClientRect();
+// 玩家出牌：把手里那张牌直接飞到弃牌堆里它最终的位置（游戏数据已先更新，弃牌堆先画好、该牌隐藏，落地再显示）
+function flyToDiscard(fromEl, game) {
+  const cardId = fromEl.dataset.cardId || "";
 
-  // 不克隆，直接操作原始卡牌元素
+  // 起点：牌当前在屏幕上的真实姿态
+  const from = fromEl.getBoundingClientRect();
+  const startX = from.left + from.width / 2;
+  const startY = from.top + from.height / 2;
+  const startW = fromEl.offsetWidth;
+  const startH = fromEl.offsetHeight;
+  const startRot = parseFloat(getComputedStyle(fromEl).getPropertyValue("--rot")) || 0;
+
+  // 终点：先把弃牌堆画出来（这张牌隐藏），量它真实的位置/大小/角度
+  pendingDiscardIds.add(cardId);
+  if (game) renderDiscardPile(game);
+  const target = document.querySelector(`#discardPile .discardCard[data-card-id="${CSS.escape(cardId)}"]`);
+  let targetX, targetY, targetW, targetH, targetRotation;
+  if (target) {
+    const tr = target.getBoundingClientRect();
+    targetX = tr.left + tr.width / 2;
+    targetY = tr.top + tr.height / 2;
+    targetW = target.offsetWidth;
+    targetH = target.offsetHeight;
+    targetRotation = parseFloat(target.dataset.rot) || 0;
+  } else {
+    const to = $("#discardPile").getBoundingClientRect();
+    targetX = to.left + to.width * (cardId.includes("_A") ? 0.28 : 0.72);
+    targetY = to.top + to.height * 0.52;
+    targetW = startW;
+    targetH = startH;
+    targetRotation = 0;
+  }
+
+  // 移到 body 下飞行：手牌区之后重新渲染时不会把它一起删掉
+  document.body.appendChild(fromEl);
   fromEl.classList.add("flyingCard");
+  // 选中高亮在飞出时就去掉（原来它留在手牌区，会被 clearSelection 清掉）
+  fromEl.classList.remove("selected");
   fromEl.style.position = "fixed";
-  fromEl.style.left = `${from.left}px`;
-  fromEl.style.top = `${from.top}px`;
-  fromEl.style.width = `${from.width}px`;
-  fromEl.style.height = `${from.height}px`;
+  fromEl.style.left = `${startX}px`;
+  fromEl.style.top = `${startY}px`;
+  fromEl.style.width = `${startW}px`;
+  fromEl.style.height = `${startH}px`;
   fromEl.style.margin = "0";
   fromEl.style.zIndex = "10000";
   fromEl.style.pointerEvents = "none";
+  fromEl.style.transition = "none";
 
   // 获取 .tableBg 中心点
   const tableBg = document.querySelector('.tableBg');
   const tableBgRect = tableBg ? tableBg.getBoundingClientRect() : null;
   const centerX = tableBgRect ? tableBgRect.left + tableBgRect.width / 2 : window.innerWidth / 2;
   const centerY = tableBgRect ? tableBgRect.top + tableBgRect.height / 2 : window.innerHeight / 2;
-
-  // Determine target position based on card suffix (_A -> left, _B -> right)
-  const cardId = fromEl.dataset.cardId || "";
-  const isACard = cardId.includes("_A");
-  const isBCard = cardId.includes("_B");
-
-  // Calculate target position (matching renderDiscardPile positions)
-  const leftX = 0.28;
-  const rightX = 0.72;
-  const targetXPercent = isACard ? leftX : (isBCard ? rightX : 0.5);
-
-  const startX = from.left + from.width / 2;
-  const startY = from.top + from.height / 2;
-  const targetX = to.left + to.width * targetXPercent;
-  const targetY = to.top + to.height * 0.52;
-
-  // Calculate scale to match discardCard size (92px base width)
-  const discardScale = getComputedStyle(document.documentElement).getPropertyValue('--scale-discard-pile') || "1";
-  const targetWidth = 92 * parseFloat(discardScale);
-  const scaleTarget = targetWidth / from.width;
-
-  // 计算目标旋转角度（使用和 renderDiscardPile 完全相同的逻辑）
-  const { leftZ, rightZ } = window.game ? getDiscardPileZIndex(window.game) : { leftZ: 1, rightZ: 1 };
-  const targetZ = isACard ? leftZ : (isBCard ? rightZ : leftZ);
-
-  function hash01(str) {
-    let h = 2166136261;
-    for (let i = 0; i < str.length; i++) {
-      h ^= str.charCodeAt(i);
-      h = Math.imul(h, 16777619);
-    }
-    return ((h >>> 0) % 10000) / 10000;
-  }
-  const targetRotation = (hash01(`${cardId}|${targetZ}`) - 0.5) * 8;
-  console.log(`[玩家出牌] cardId=${cardId}, targetZ=${targetZ}, rotation=${targetRotation.toFixed(2)}°`);
 
   // 弧线控制点：围绕 .tableBg 中心
   const midX = (startX + targetX) / 2;
@@ -362,6 +428,9 @@ function flyToDiscard(fromEl) {
   const arcHeight = Math.min(80, dist * 0.3);
   const controlX = midX + toCenterX * 0.2;
   const controlY = midY + toCenterY * 0.2 - arcHeight;
+
+  const sxEnd = targetW / startW;
+  const syEnd = targetH / startH;
 
   const steps = 30;
   const keyframes = [];
@@ -397,25 +466,30 @@ function flyToDiscard(fromEl) {
     const x = baseX + normX * overshootAmount;
     const y = baseY + normY * overshootAmount;
 
-    const currentScale = 1 + (scaleTarget - 1) * Math.min(easeT, 1.0);
-    const currentRotation = targetRotation * Math.min(easeT, 1.0);
-    const opacity = 1 - 0.05 * Math.min(easeT, 1.0);
+    const sx = 1 + (sxEnd - 1) * arcT;
+    const sy = 1 + (syEnd - 1) * arcT;
+    const rot = startRot + (targetRotation - startRot) * arcT;
 
     keyframes.push({
       left: `${x}px`,
       top: `${y}px`,
-      transform: `translate(-50%, -50%) scale(${currentScale}) rotate(${currentRotation}deg)`,
-      opacity: opacity,
+      transform: `translate(-50%, -50%) rotate(${rot}deg) scale(${sx}, ${sy})`,
+      // 弃牌堆的牌没有阴影，后半程把阴影渐渐收掉，落地时不会突然消失
+      boxShadow: `0 4px 12px rgba(0,0,0,${(0.15 * (1 - Math.min(1, Math.max(0, (t - 0.4) / 0.5)))).toFixed(3)})`,
       offset: t
     });
   }
 
   const anim = fromEl.animate(keyframes, {
     duration: 520,
-    easing: "linear"
+    easing: "linear",
+    fill: "forwards"
   });
 
   anim.onfinish = () => {
+    pendingDiscardIds.delete(cardId);
+    const landed = document.querySelector(`#discardPile .discardCard[data-card-id="${CSS.escape(cardId)}"]`);
+    if (landed) landed.style.visibility = "";
     fromEl.remove();
   };
 
@@ -565,15 +639,21 @@ function animateDrawCardFly(fromPlayerIdx, toPlayerIdx, drawnCard, onComplete) {
     // 🔧 从实际卡牌位置计算起点，而不是容器中心
     // 获取源手牌的最后一张卡牌（DOM 顺序最后，z-index 最高，视觉上最前面不被遮挡）
     const allFromCards = fromHandEl.querySelectorAll('.miniBack, .faceCard');
-    const topFromCard = allFromCards.length > 0 ? allFromCards[allFromCards.length - 1] : null;
+    let topFromCard = allFromCards.length > 0 ? allFromCards[allFromCards.length - 1] : null;
     let startX, startY;
+
+    // 从玩家手里被抽走：从那张牌本身起飞，原牌立刻藏起来，其余手牌平滑让位
+    if (fromPlayerIdx === 0 && drawnCard) {
+      const srcEl = fromHandEl.querySelector(`.faceCard[data-card-id="${CSS.escape(drawnCard.id)}"]`);
+      if (srcEl) topFromCard = srcEl;
+    }
 
     if (topFromCard) {
       // 如果有卡牌，从最后一张卡牌（最上层）的中心开始
       const cardRect = topFromCard.getBoundingClientRect();
       startX = cardRect.left + cardRect.width / 2;
       startY = cardRect.top + cardRect.height / 2;
-      console.log(`[animateDrawCardFly] 使用最后一张卡（最上层）作为起点:`, cardRect);
+      if (fromPlayerIdx === 0 && topFromCard.dataset.cardId) beginOutgoing(topFromCard);
     } else {
       // 如果没有卡牌（手牌为空），使用容器中心 + zone高度估算
       const zoneRect = fromHandEl.parentElement.getBoundingClientRect();
@@ -587,66 +667,17 @@ function animateDrawCardFly(fromPlayerIdx, toPlayerIdx, drawnCard, onComplete) {
     const toPlayer = (window.game && window.game.players) ? window.game.players[toPlayerIdx] : null;
     console.log(`[animateDrawCardFly] toPlayer:`, toPlayer);
 
-    let endX, endY;
-
-    if (toPlayerIdx === 0) {
-      // 玩家手牌：飞到扇形排列的最后一张
-      const futureHandCount = toPlayer ? toPlayer.hand.length + 1 : 1;
-      const center = (futureHandCount - 1) / 2;
-      const lastCardIndex = futureHandCount - 1;
-      const d = lastCardIndex - center;
-      const spread = Math.min(62, 920 / Math.max(1, futureHandCount - 1));
-
-      endX = toRect.left + toRect.width / 2 + d * spread;
-      endY = toRect.top + 18 + 62 + Math.abs(d) * 0.8;
-    } else {
-      // AI 手牌：飞到最后一张卡的中心（DOM 顺序最后一个，z-index 最高，视觉上最前面不被遮挡）
-      const allCards = toHandEl.querySelectorAll('.miniBack');
-      const topCard = allCards.length > 0 ? allCards[allCards.length - 1] : null;
-      if (topCard) {
-        const cardRect = topCard.getBoundingClientRect();
-        let targetX = cardRect.left + cardRect.width / 2;
-        let targetY = cardRect.top + cardRect.height / 2;
-
-        // 向屏幕中心偏移15%的距离，让卡牌不飞得太远
-        const offsetRatio = 0.15;
-        const towardCenterX = (centerX - targetX) * offsetRatio;
-        const towardCenterY = (centerY - targetY) * offsetRatio;
-
-        // 额外向上偏移，避免整体偏下
-        const upwardOffset = 20; // 向上偏移20px
-
-        endX = targetX + towardCenterX;
-        endY = targetY + towardCenterY - upwardOffset;
-        console.log(`[animateDrawCardFly] 使用最后一张卡（最上层）位置, 向中心偏移15%, 向上偏移${upwardOffset}px, z-index=${topCard.style.zIndex}, 中心:(${endX.toFixed(1)}, ${endY.toFixed(1)})`);
-      } else {
-        // 如果没有卡牌，使用手牌区域中心
-        endX = toRect.left + toRect.width / 2;
-        endY = toRect.top + toRect.height / 2;
-        console.log(`[animateDrawCardFly] 无卡牌，使用区域中心`);
-      }
-    }
+    // 终点：直接量出目标手牌里"新牌"的真实落点（位置、大小、角度），并让已有的牌提前滑到让位后的位置
+    const toCount = toHandEl.querySelectorAll(toPlayerIdx === 0 ? ":scope > .faceCard" : ":scope > .miniBack").length;
+    const toPose = probeSlotPose(toPlayerIdx, toCount, toCount + 1);
+    beginIncoming(toPlayerIdx);
+    const endX = toPose.cx;
+    const endY = toPose.cy;
 
     console.log(`[animateDrawCardFly] 最终终点位置: (${endX}, ${endY})`);
 
-    // 确定目标玩家手牌的实际卡牌尺寸（用于缩放）
-    let targetCardWidth, targetCardHeight;
-    if (toPlayerIdx === 0) {
-      // 玩家手牌（底部）
-      const scalePlayer = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--scale-player-card')) || 0.85;
-      targetCardWidth = 86 * scalePlayer;
-      targetCardHeight = 124 * scalePlayer;
-    } else if (toPlayerIdx === 2) {
-      // AI上家
-      const scaleTop = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--scale-ai-top-card')) || 1.29;
-      targetCardWidth = 52 * scaleTop;
-      targetCardHeight = 72 * scaleTop;
-    } else {
-      // AI左右家
-      const scaleSide = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--scale-ai-side-card')) || 1.25;
-      targetCardWidth = 64 * scaleSide;
-      targetCardHeight = 89 * scaleSide;
-    }
+    const targetCardWidth = toPose.w;
+    const targetCardHeight = toPose.h;
 
     // 创建飞行卡牌（双面结构：正面+背面）
     const showFace = fromPlayerIdx === 0; // 从人类玩家手中抽出时显示正面
@@ -669,6 +700,9 @@ function animateDrawCardFly(fromPlayerIdx, toPlayerIdx, drawnCard, onComplete) {
     backCard.style.width = "86px";
     backCard.style.height = "124px";
     backCard.style.position = "absolute";
+    backCard.style.left = "0";
+    backCard.style.top = "0";
+    backCard.style.transition = "none";
     backCard.style.backfaceVisibility = "hidden";
     backCard.style.transform = "rotateY(0deg)";
 
@@ -678,6 +712,9 @@ function animateDrawCardFly(fromPlayerIdx, toPlayerIdx, drawnCard, onComplete) {
     frontCard.style.width = "86px";
     frontCard.style.height = "124px";
     frontCard.style.position = "absolute";
+    frontCard.style.left = "0";
+    frontCard.style.top = "0";
+    frontCard.style.transition = "none";
     frontCard.style.backfaceVisibility = "hidden";
     frontCard.style.transform = "rotateY(180deg)";
 
@@ -713,15 +750,10 @@ function animateDrawCardFly(fromPlayerIdx, toPlayerIdx, drawnCard, onComplete) {
     const controlX = midX + toCenterX * 0.3;
     const controlY = midY + toCenterY * 0.3 - arcHeight;
 
-    // 计算目标旋转角度
-    let targetRotZ = 0;
-    if (toPlayerIdx === 3) targetRotZ = 90;        // 左侧AI
-    else if (toPlayerIdx === 1) targetRotZ = -90;  // 右侧AI
-    else if (toPlayerIdx === 2) targetRotZ = 180;  // 上方AI
-    else targetRotZ = 0;                            // 玩家（底部）
-
-    // 计算目标缩放
-    const targetScale = targetCardWidth / 86;
+    // 目标角度/缩放：和落点那张牌完全一致
+    const targetRotZ = toPose.ang;
+    const targetScaleX = targetCardWidth / 86;
+    const targetScaleY = targetCardHeight / 124;
 
     // 生成关键帧（贝塞尔曲线 + 过冲）
     const steps = 30;
@@ -761,7 +793,8 @@ function animateDrawCardFly(fromPlayerIdx, toPlayerIdx, drawnCard, onComplete) {
       const y = baseY + normY * overshootAmount;
 
       // 平滑缩放
-      const currentScale = 1 + (targetScale - 1) * Math.min(arcT, 1.0);
+      const currentScaleX = 1 + (targetScaleX - 1) * Math.min(arcT, 1.0);
+      const currentScaleY = 1 + (targetScaleY - 1) * Math.min(arcT, 1.0);
 
       // Z轴旋转（对齐目标玩家手牌方向）
       const currentRotZ = targetRotZ * Math.min(arcT, 1.0);
@@ -769,22 +802,18 @@ function animateDrawCardFly(fromPlayerIdx, toPlayerIdx, drawnCard, onComplete) {
       // Y轴翻转（从人类手中抽出时：正面→背面；从AI手中抽到人类手中：背面→正面）
       let flipRotY = 0;
       if (showFace) {
-        // 从人类手中抽出：正面(0deg) → 背面(180deg)
-        flipRotY = Math.min(arcT, 1.0) * 180;
+        // 从人类手中抽出：正面 → 背面。容器 rotateY(180) 时露正面、0/360 时露牌背，所以是 180 → 360
+        flipRotY = 180 + Math.min(arcT, 1.0) * 180;
       } else if (toPlayerIdx === 0) {
         // 抽到人类手中：背面(0deg) → 正面(180deg)
         flipRotY = Math.min(arcT, 1.0) * 180;
       }
       // AI之间抽牌：不翻转，保持背面
 
-      // 淡出效果
-      const opacity = 1 - 0.05 * Math.min(arcT, 1.0);
-
       keyframes.push({
         left: `${x - 43}px`,
         top: `${y - 62}px`,
-        transform: `scale(${currentScale}) rotateZ(${currentRotZ}deg) rotateY(${flipRotY}deg)`,
-        opacity: opacity,
+        transform: `rotateZ(${currentRotZ}deg) scale(${currentScaleX}, ${currentScaleY}) rotateY(${flipRotY}deg)`,
         offset: t
       });
     }
@@ -800,6 +829,7 @@ function animateDrawCardFly(fromPlayerIdx, toPlayerIdx, drawnCard, onComplete) {
 
     anim.onfinish = () => {
       console.log(`[animateDrawCardFly] 动画完成`);
+      endIncoming(toPlayerIdx);
       flipContainer.remove();
       if (onComplete) onComplete();
     };
@@ -861,14 +891,16 @@ function animateDrawCardFlyFromPoint(startX, startY, toPlayerIdx, drawnCard, cur
 
     // 计算目标位置（最右边卡牌的位置，学习flyJokerToPlayerSimple）
     let endX, endY;
+    let endRot = 5;
     if (toPlayerIdx === 0) {
-      // 玩家手牌：扇形展开，最右边位置
-      const center = (numCards - 1) / 2;
-      const spread = Math.min(62, 920 / Math.max(1, numCards - 1));
-      const d = numCards - 1 - center; // 最右边
-      endX = toRect.left + toRect.width / 2 + d * spread;
-      endY = toRect.top + 18 + targetCardHeight / 2 + Math.abs(d) * 0.8;
-      console.log(`[玩家抽卡] 目标位置计算: numCards=${numCards}, center=${center}, d=${d}, spread=${spread}, endX=${endX}, endY=${endY}`);
+      // 玩家手牌：新牌放在最右边。直接量出它的真实落点，同时让已有的牌提前滑到让位后的位置
+      const pose = probeSlotPose(0, numCards - 1, numCards);
+      beginIncoming(0);
+      endX = pose.cx;
+      endY = pose.cy;
+      endRot = pose.ang;
+      targetCardWidth = pose.w;
+      targetCardHeight = pose.h;
     } else {
       // 其他玩家（保持原逻辑）
       endX = toRect.left + toRect.width / 2;
@@ -918,8 +950,9 @@ function animateDrawCardFlyFromPoint(startX, startY, toPlayerIdx, drawnCard, cur
     // 计算目标旋转角度（玩家手牌不旋转，保持0度）
     const targetRotZ = 0; // 玩家手牌始终是0度
 
-    // 计算目标缩放（从抽牌界面140px缩放到玩家手牌尺寸）
-    const targetScale = targetCardWidth / 140;
+    // 计算目标缩放（从抽牌界面 140x196 缩放到手牌的真实宽高）
+    const targetScaleX = targetCardWidth / 140;
+    const targetScaleY = targetCardHeight / 196;
 
     // 生成关键帧（贝塞尔曲线 + ease-in-out，无过冲）
     const steps = 30;
@@ -938,21 +971,18 @@ function animateDrawCardFlyFromPoint(startX, startY, toPlayerIdx, drawnCard, cur
       const y = (1-easeT)*(1-easeT)*startY + 2*(1-easeT)*easeT*controlY + easeT*easeT*endY;
 
       // 平滑缩放
-      const currentScale = 1 + (targetScale - 1) * easeT;
+      const currentScaleX = 1 + (targetScaleX - 1) * easeT;
+      const currentScaleY = 1 + (targetScaleY - 1) * easeT;
 
-      // 飞行中的旋转角度：0度 → 10度 → 5度（终点保持轻微倾斜）
+      // 飞行中的旋转角度：0度 → 10度 → 落点角度（和手牌扇形里这张牌的角度一致）
       const rotationAngle = easeT < 0.5
         ? easeT * 2 * 10  // 前半段从0到10度
-        : 10 - (easeT - 0.5) * 2 * 5; // 后半段从10度降到5度
-
-      // 淡出效果
-      const opacity = 1 - 0.05 * easeT;
+        : 10 + (endRot - 10) * (easeT - 0.5) * 2; // 后半段从10度转到落点角度
 
       keyframes.push({
         left: `${x - 70}px`,
         top: `${y - 98}px`,
-        transform: `scale(${currentScale}) rotate(${rotationAngle}deg)`,
-        opacity: opacity,
+        transform: `rotate(${rotationAngle}deg) scale(${currentScaleX}, ${currentScaleY})`,
         offset: t
       });
     }
@@ -972,6 +1002,7 @@ function animateDrawCardFlyFromPoint(startX, startY, toPlayerIdx, drawnCard, cur
 
     anim.onfinish = () => {
       console.log("[animateDrawCardFlyFromPoint] 动画完成，移除卡牌并调用回调");
+      if (toPlayerIdx === 0) endIncoming(0);
       flyingCard.remove();
       if (onComplete) {
         console.log("[animateDrawCardFlyFromPoint] 调用 onComplete");
@@ -1083,7 +1114,7 @@ function animateAiDiscardPair(playerIdx, card1, card2, fromRectOverride, onCompl
     }
 
     // Calculate z-index for each card (使用和 renderDiscardPile 完全相同的逻辑)
-    const { leftZ, rightZ } = window.game ? getDiscardPileZIndex(window.game) : { leftZ: 1, rightZ: 1 };
+    const { leftZ, rightZ } = activeGame ? getDiscardPileZIndex(activeGame) : { leftZ: 1, rightZ: 1 };
 
     cards.forEach((card, index) => {
       // 飞行卡牌使用弃牌堆的基础大小（92x132），确保完美匹配
@@ -1251,6 +1282,14 @@ function animateAiDiscardPair(playerIdx, card1, card2, fromRectOverride, onCompl
         easing: "linear"
       });
 
+      // 弃牌堆的牌没有阴影：正面阴影在后半程渐渐收掉，落地不会突然消失
+      frontFace.animate([
+        { boxShadow: "0 4px 12px rgba(0,0,0,0.15)", offset: 0 },
+        { boxShadow: "0 4px 12px rgba(0,0,0,0.15)", offset: 0.4 },
+        { boxShadow: "0 4px 12px rgba(0,0,0,0)", offset: 0.9 },
+        { boxShadow: "0 4px 12px rgba(0,0,0,0)", offset: 1 }
+      ], { duration: 520, fill: "forwards" });
+
       // 正面内容已在初始化时填充，不需要90度检测了
 
       outerAnim.onfinish = () => {
@@ -1283,13 +1322,26 @@ function animateAiJokerDraw(fromPlayerIdx, toPlayerIdx, drawnCard, onComplete) {
 
     // 计算起点：使用源手牌的最后一张卡位置（z-index 最高，视觉上最前面不被遮挡）
     const allFromCards = fromHandEl.querySelectorAll('.miniBack, .faceCard');
-    const topFromCard = allFromCards.length > 0 ? allFromCards[allFromCards.length - 1] : null;
+    let topFromCard = allFromCards.length > 0 ? allFromCards[allFromCards.length - 1] : null;
     let startX, startY;
+    // 起飞姿态和被抽的那张牌一致（AI 牌背或玩家手里的王八牌）
+    let startRot = 0, startSX = 1, startSY = 1;
+    const fromHuman = fromPlayerIdx === 0;
+    if (fromHuman && drawnCard) {
+      const srcEl = fromHandEl.querySelector(`.faceCard[data-card-id="${CSS.escape(drawnCard.id)}"]`);
+      if (srcEl) topFromCard = srcEl;
+    }
 
     if (topFromCard) {
       const cardRect = topFromCard.getBoundingClientRect();
       startX = cardRect.left + cardRect.width / 2;
       startY = cardRect.top + cardRect.height / 2;
+      startSX = topFromCard.offsetWidth / 86;
+      startSY = topFromCard.offsetHeight / 124;
+      startRot = fromHuman
+        ? (parseFloat(getComputedStyle(topFromCard).getPropertyValue("--rot")) || 0)
+        : slotAngle(fromPlayerIdx, 0, 1);
+      if (fromHuman && topFromCard.dataset.cardId) beginOutgoing(topFromCard);
     } else {
       const fromRect = fromHandEl.getBoundingClientRect();
       startX = fromRect.left + fromRect.width / 2;
@@ -1299,46 +1351,6 @@ function animateAiJokerDraw(fromPlayerIdx, toPlayerIdx, drawnCard, onComplete) {
     // 屏幕中心点（亮相位置）
     const centerX = window.innerWidth / 2;
     const centerY = window.innerHeight / 2;
-
-    // 计算终点：目标AI手牌的最后一张卡位置（z-index 最高，视觉上最前面不被遮挡）
-    const toPlayer = window.game?.players?.[toPlayerIdx];
-    const futureHandCount = toPlayer ? toPlayer.hand.length + 1 : 1;
-
-    let endX, endY;
-    const allToCards = toHandEl.querySelectorAll('.miniBack');
-    const topCard = allToCards.length > 0 ? allToCards[allToCards.length - 1] : null;
-    if (topCard) {
-      const cardRect = topCard.getBoundingClientRect();
-      let targetX = cardRect.left + cardRect.width / 2;
-      let targetY = cardRect.top + cardRect.height / 2;
-
-      // 向屏幕中心偏移15%的距离，让卡牌不飞得太远
-      const offsetRatio = 0.15;
-      const towardCenterX = (centerX - targetX) * offsetRatio;
-      const towardCenterY = (centerY - targetY) * offsetRatio;
-
-      // 额外向上偏移，避免整体偏下
-      const upwardOffset = 20; // 向上偏移20px
-
-      endX = targetX + towardCenterX;
-      endY = targetY + towardCenterY - upwardOffset;
-    } else {
-      const toRect = toHandEl.getBoundingClientRect();
-      endX = toRect.left + toRect.width / 2;
-      endY = toRect.top + toRect.height / 2;
-    }
-
-    // 确定目标手牌尺寸
-    let targetCardWidth, targetCardHeight;
-    if (toPlayerIdx === 2) {
-      const scaleTop = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--scale-ai-top-card')) || 1.29;
-      targetCardWidth = 52 * scaleTop;
-      targetCardHeight = 72 * scaleTop;
-    } else {
-      const scaleSide = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--scale-ai-side-card')) || 1.25;
-      targetCardWidth = 64 * scaleSide;
-      targetCardHeight = 89 * scaleSide;
-    }
 
     // 创建飞行的Joker卡牌（双面结构：背面+正面，支持翻转）
     // 外层容器：负责位置和缩放
@@ -1366,6 +1378,7 @@ function animateAiJokerDraw(fromPlayerIdx, toPlayerIdx, drawnCard, onComplete) {
     backFace.style.position = "absolute";
     backFace.style.left = "0";
     backFace.style.top = "0";
+    backFace.style.transition = "none";
     backFace.style.backfaceVisibility = "hidden";
     backFace.style.transform = "rotateY(0deg)";
 
@@ -1402,7 +1415,7 @@ function animateAiJokerDraw(fromPlayerIdx, toPlayerIdx, drawnCard, onComplete) {
     document.body.appendChild(backdrop);
 
     // 创建文字元素（会在亮相时显示）
-    const toPlayerName = window.game?.players?.[toPlayerIdx]?.name || "";
+    const toPlayerName = activeGame?.players?.[toPlayerIdx]?.name || "";
     const nameText = document.createElement("div");
     nameText.style.position = "fixed";
     nameText.style.left = "50%";
@@ -1432,7 +1445,7 @@ function animateAiJokerDraw(fromPlayerIdx, toPlayerIdx, drawnCard, onComplete) {
       {
         left: `${startX - 43}px`,
         top: `${startY - 62}px`,
-        transform: `scale(1)`,
+        transform: `rotateZ(${startRot}deg) scale(${startSX}, ${startSY})`,
         opacity: 1,
         offset: 0
       },
@@ -1440,7 +1453,7 @@ function animateAiJokerDraw(fromPlayerIdx, toPlayerIdx, drawnCard, onComplete) {
       {
         left: `${centerX - 43}px`,
         top: `${centerY - 62}px`,
-        transform: `scale(1.5)`,
+        transform: `rotateZ(0deg) scale(1.5, 1.5)`,
         opacity: 1,
         offset: flyDuration / totalDuration1,
         easing: "cubic-bezier(0.33, 1, 0.68, 1)" // ease-out
@@ -1449,16 +1462,16 @@ function animateAiJokerDraw(fromPlayerIdx, toPlayerIdx, drawnCard, onComplete) {
       {
         left: `${centerX - 43}px`,
         top: `${centerY - 62}px`,
-        transform: `scale(1.5)`,
+        transform: `rotateZ(0deg) scale(1.5, 1.5)`,
         opacity: 1,
         offset: 1
       }
     ];
 
     const flipKeyframes1 = [
-      // 起点：背面
+      // 起点：背面（从玩家手里抽走时一开始就是正面）
       {
-        transform: `rotateY(0deg)`,
+        transform: `rotateY(${fromHuman ? 180 : 0}deg)`,
         offset: 0
       },
       // 飞行终点：正面（ease-out）
@@ -1488,7 +1501,7 @@ function animateAiJokerDraw(fromPlayerIdx, toPlayerIdx, drawnCard, onComplete) {
       fill: "forwards"
     });
 
-    // 监控翻转进度，在90°时填充大王正面图案
+    // 监控翻转进度，在90°时填充大王正面图案（从玩家手里抽走时立即填充）
     let flipped = false;
     const checkFlip = () => {
       if (flipped || flipAnim.playState === 'finished') return;
@@ -1497,7 +1510,7 @@ function animateAiJokerDraw(fromPlayerIdx, toPlayerIdx, drawnCard, onComplete) {
 
       // 简化计算：直接用进度判断
       const flipProgress = progress * (totalDuration1 / flyDuration);
-      const flipRotation = Math.min(flipProgress, 1.0) * 180;
+      const flipRotation = fromHuman ? 180 : Math.min(flipProgress, 1.0) * 180;
 
       // 当旋转到 90° 时，填充正面大王图案
       if (flipRotation >= 90 && !flipped) {
@@ -1529,7 +1542,7 @@ function animateAiJokerDraw(fromPlayerIdx, toPlayerIdx, drawnCard, onComplete) {
         requestAnimationFrame(checkFlip);
       }
     };
-    requestAnimationFrame(checkFlip);
+    if (fromHuman) checkFlip(); else requestAnimationFrame(checkFlip);
 
     // 同步背景遮罩动画
     backdrop.animate([
@@ -1562,34 +1575,33 @@ function animateAiJokerDraw(fromPlayerIdx, toPlayerIdx, drawnCard, onComplete) {
       nameText.remove();
       backdrop.remove();
 
-      // 阶段2：从屏幕中间飞向目标AI手牌（同时翻转回背面）
-      const targetScale = targetCardWidth / 86;
-
-      // 计算目标旋转角度
-      let targetRotZ = 0;
-      if (toPlayerIdx === 3) targetRotZ = 90;        // 左侧AI
-      else if (toPlayerIdx === 1) targetRotZ = -90;  // 右侧AI
-      else if (toPlayerIdx === 2) targetRotZ = 180;  // 上方AI
+      // 阶段2：从屏幕中间飞向目标手牌里新牌的真实落点（同时翻转回背面），已有的牌同时滑开让位
+      const toCount = toHandEl.querySelectorAll(":scope > .miniBack").length;
+      const pose = probeSlotPose(toPlayerIdx, toCount, toCount + 1);
+      beginIncoming(toPlayerIdx);
+      const endX = pose.cx;
+      const endY = pose.cy;
+      const targetSX = pose.w / 86;
+      const targetSY = pose.h / 124;
+      const targetRotZ = pose.ang;
 
       const stage2Duration = 600;
 
       // 外层容器：位置、缩放、Z轴旋转（使用 ease-out + 过冲效果）
-      const overshootScale = targetScale * 1.08; // 8% 过冲
+      const overshoot = 1.08; // 8% 过冲
       const outerKeyframes2 = [
         // 起点：中心位置，放大1.5倍
         {
           left: `${centerX - 43}px`,
           top: `${centerY - 62}px`,
-          transform: `scale(1.5) rotateZ(0deg)`,
-          opacity: 1,
+          transform: `rotateZ(0deg) scale(1.5, 1.5)`,
           offset: 0
         },
         // 70%：接近目标，过冲到108%
         {
           left: `${endX - 43}px`,
           top: `${endY - 62}px`,
-          transform: `scale(${overshootScale}) rotateZ(${targetRotZ}deg)`,
-          opacity: 0.95,
+          transform: `rotateZ(${targetRotZ}deg) scale(${targetSX * overshoot}, ${targetSY * overshoot})`,
           offset: 0.70,
           easing: "cubic-bezier(0.25, 0.46, 0.45, 0.94)" // ease-out
         },
@@ -1597,8 +1609,7 @@ function animateAiJokerDraw(fromPlayerIdx, toPlayerIdx, drawnCard, onComplete) {
         {
           left: `${endX - 43}px`,
           top: `${endY - 62}px`,
-          transform: `scale(${targetScale}) rotateZ(${targetRotZ}deg)`,
-          opacity: 0.95,
+          transform: `rotateZ(${targetRotZ}deg) scale(${targetSX}, ${targetSY})`,
           offset: 1,
           easing: "cubic-bezier(0.25, 0.46, 0.45, 0.94)" // ease-out
         }
@@ -1630,6 +1641,7 @@ function animateAiJokerDraw(fromPlayerIdx, toPlayerIdx, drawnCard, onComplete) {
 
       anim2.onfinish = () => {
         console.log("[AI Joker动画] 完成");
+        endIncoming(toPlayerIdx);
         outerContainer.remove();
         if (onComplete) onComplete();
       };
@@ -1651,31 +1663,9 @@ function animateJokerDrawFromPoint(startX, startY, toPlayerIdx, onComplete) {
       return;
     }
 
-    const toRect = toHandEl.getBoundingClientRect();
-
     // 屏幕中心点（亮相位置）
     const centerX = window.innerWidth / 2;
     const centerY = window.innerHeight / 2;
-
-    // 终点（玩家手牌中心）
-    const endX = toRect.left + toRect.width / 2;
-    const endY = toRect.top + toRect.height / 2;
-
-    // 确定目标手牌尺寸
-    let targetCardWidth, targetCardHeight;
-    if (toPlayerIdx === 0) {
-      const scalePlayer = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--scale-player-card')) || 0.85;
-      targetCardWidth = 86 * scalePlayer;
-      targetCardHeight = 124 * scalePlayer;
-    } else if (toPlayerIdx === 2) {
-      const scaleTop = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--scale-ai-top-card')) || 1.29;
-      targetCardWidth = 52 * scaleTop;
-      targetCardHeight = 72 * scaleTop;
-    } else {
-      const scaleSide = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--scale-ai-side-card')) || 1.25;
-      targetCardWidth = 64 * scaleSide;
-      targetCardHeight = 89 * scaleSide;
-    }
 
     // 创建飞行的Joker卡牌
     const flyingCard = document.createElement("div");
@@ -1707,7 +1697,7 @@ function animateJokerDrawFromPoint(startX, startY, toPlayerIdx, onComplete) {
     nameText.style.textShadow = "0 2px 12px rgba(0,0,0,0.55)";
     nameText.style.pointerEvents = "none";
     nameText.style.opacity = "0";
-    nameText.textContent = `王八牌 → ${game?.players?.[toPlayerIdx]?.name || ""}`;
+    nameText.textContent = `王八牌 → ${activeGame?.players?.[toPlayerIdx]?.name || ""}`;
     document.body.appendChild(nameText);
 
     // 阶段1：飞到屏幕中间 + 亮相0.8s (一个完整动画)
@@ -1788,13 +1778,19 @@ function animateJokerDrawFromPoint(startX, startY, toPlayerIdx, onComplete) {
       console.log("[Joker动画] 亮相完成，开始飞向手牌");
       nameText.remove();
 
-      // 阶段2：从屏幕中间飞向玩家手牌
+      // 阶段2：从屏幕中间飞向手牌里新牌的真实落点，已有的牌同时滑开让位
+      const toCount = toHandEl.querySelectorAll(toPlayerIdx === 0 ? ":scope > .faceCard" : ":scope > .miniBack").length;
+      const pose = probeSlotPose(toPlayerIdx, toCount, toCount + 1);
+      beginIncoming(toPlayerIdx);
+      const endX = pose.cx;
+      const endY = pose.cy;
       const dist2 = Math.sqrt(Math.pow(endX - centerX, 2) + Math.pow(endY - centerY, 2));
       const arcHeight2 = Math.min(150, dist2 * 0.3);
       const controlX2 = (centerX + endX) / 2;
       const controlY2 = (centerY + endY) / 2 - arcHeight2;
 
-      const targetScale = targetCardWidth / 140;
+      const targetScaleX = pose.w / 140;
+      const targetScaleY = pose.h / 196;
       const overshootDist = dist2 * 0.05;
 
       const steps2 = 30;
@@ -1828,13 +1824,14 @@ function animateJokerDrawFromPoint(startX, startY, toPlayerIdx, onComplete) {
         const x = baseX + normX * overshootAmount;
         const y = baseY + normY * overshootAmount;
 
-        const scale = 1.3 + (targetScale - 1.3) * Math.min(easeT, 1.0);
+        const k = Math.min(easeT, 1.0);
+        const scaleX = 1.3 + (targetScaleX - 1.3) * k;
+        const scaleY = 1.3 + (targetScaleY - 1.3) * k;
 
         keyframes2.push({
           left: `${x - 70}px`,
           top: `${y - 98}px`,
-          transform: `scale(${scale})`,
-          opacity: 1 - 0.1 * Math.min(easeT, 1.0)
+          transform: `rotate(${pose.ang * k}deg) scale(${scaleX}, ${scaleY})`
         });
       }
 
@@ -1845,6 +1842,7 @@ function animateJokerDrawFromPoint(startX, startY, toPlayerIdx, onComplete) {
 
       anim2.onfinish = () => {
         console.log("[Joker动画] 完成");
+        endIncoming(toPlayerIdx);
         flyingCard.remove();
         if (onComplete) onComplete();
       };
@@ -3582,6 +3580,10 @@ function initUi(imagePairs = []) {
       playerCount: 4,
       seed: String(Date.now()),
     });
+    activeGame = game;
+    incomingSlots.fill(0);
+    outgoingCardIds.clear();
+    pendingDiscardIds.clear();
     $("#setup").classList.add("hidden");
     $("#game").classList.remove("hidden");
     endOverlay.classList.add("hidden");
@@ -5469,8 +5471,8 @@ function initUi(imagePairs = []) {
       });
 
       // 启动出牌飞行动画（同时进行）
-      if (aEl) flyToDiscard(aEl);
-      if (bEl) flyToDiscard(bEl);
+      if (aEl) flyToDiscard(aEl, game);
+      if (bEl) flyToDiscard(bEl, game);
 
       // 等待自适应动画完成后，清除标记并重新渲染（清理transition等）
       setTimeout(() => {
