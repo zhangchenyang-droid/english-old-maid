@@ -1008,7 +1008,7 @@ input[type="number"]:focus {
   flex-wrap: nowrap;
   overflow-x: auto;
   overflow-y: hidden;
-  padding: 6px 6px 14px;
+  padding: 14px 14px 18px; /* 留出外发光的位置（原 6px 6px 14px） */
   /* Smooth continuous scrolling (no per-card snap). */
   scroll-snap-type: none;
   -webkit-overflow-scrolling: touch;
@@ -1020,7 +1020,7 @@ input[type="number"]:focus {
 .drawRow::-webkit-scrollbar { display: none; }
 .drawRow.instant .drawBack {
   /* If user starts scrolling/dragging, finish the "pile -> spread" instantly so scroll feedback is immediate. */
-  transition: none !important;
+  transition: box-shadow 180ms ease !important; /* 位移瞬间完成，外发光仍保留过渡 */
   transform: translateY(0px) translateX(0px) !important;
   opacity: 1 !important;
 }
@@ -1039,7 +1039,8 @@ input[type="number"]:focus {
   /* 初始状态：所有卡片从左侧堆叠位置开始，带透明度 */
   transform: translateY(0px) translateX(var(--preX, 0px)) scale(0.95);
   opacity: 0;
-  transition: transform 320ms cubic-bezier(0.34, 1.56, 0.64, 1), opacity 220ms ease-out;
+  box-shadow: 0 0 0 0 rgba(255, 226, 120, 0), 0 0 0 0 rgba(255, 196, 60, 0);
+  transition: transform 320ms cubic-bezier(0.34, 1.56, 0.64, 1), opacity 220ms ease-out, box-shadow 180ms ease;
   isolation: isolate;
   will-change: transform, opacity;
 }
@@ -1054,11 +1055,24 @@ input[type="number"]:focus {
   transform: translateY(0px) translateX(0px) scale(1);
   opacity: 1 !important;
   /* 保持弹性曲线，让排开效果有回弹感 */
-  transition: transform 320ms cubic-bezier(0.34, 1.56, 0.64, 1), opacity 220ms ease-out;
+  transition: transform 320ms cubic-bezier(0.34, 1.56, 0.64, 1), opacity 220ms ease-out, box-shadow 180ms ease;
 }
 
 .drawBack.in:active {
   transform: translateY(8px) translateX(0px) scale(0.98);
+}
+
+/* 在牌上按住拖动是"选牌"，不让浏览器当成横向滚动手势（滚动用下方滚动条，或拖到边缘自动滚） */
+.drawRow .drawBack { touch-action: none; }
+
+/* 外发光：电脑上鼠标悬停；手机上手指按住 / 拖到哪张亮哪张（JS 加 .glow） */
+.drawBack.glow {
+  box-shadow: 0 0 0 3px rgba(255, 226, 120, 0.95), 0 0 12px 3px rgba(255, 196, 60, 0.75);
+}
+@media (hover: hover) {
+  .drawBack.in:hover {
+    box-shadow: 0 0 0 3px rgba(255, 226, 120, 0.95), 0 0 12px 3px rgba(255, 196, 60, 0.75);
+  }
 }
 
 /* 全局 button:hover 会用 background 简写把牌背图片换成半透明白色，看起来像牌变透明；这里把牌背保留住 */

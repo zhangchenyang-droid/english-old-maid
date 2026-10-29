@@ -964,9 +964,10 @@ function getAiDrawDelay(game, aiPlayerIdx) {
   const ai = game.players[aiPlayerIdx];
   if (!ai || ai.hand.length === 0) return 500;
 
-  if (ai.hand.length === 1) return 400 + Math.random() * 300;  // 0.4-0.7s
-  if (ai.hand.length <= 3) return 500 + Math.random() * 400;  // 0.5-0.9s
-  return 1000 + Math.random() * 600;  // 1.0-1.6s
+  // 比原来快约 25%
+  if (ai.hand.length === 1) return 300 + Math.random() * 200;  // 0.3-0.5s
+  if (ai.hand.length <= 3) return 400 + Math.random() * 250;  // 0.4-0.65s
+  return 750 + Math.random() * 450;  // 0.75-1.2s
 }
 
 // 检查玩家AB卡平衡（调试用）

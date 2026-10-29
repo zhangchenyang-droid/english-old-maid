@@ -989,7 +989,7 @@ function animateDrawCardFly(fromPlayerIdx, toPlayerIdx, drawnCard, onComplete) {
     console.log(`[animateDrawCardFly] 开始执行动画, keyframes数量:`, keyframes.length);
     Sound.play("draw");
     const anim = flipContainer.animate(keyframes, {
-      duration: 560,
+      duration: 480, // 原 560，加快一点
       easing: "linear", // 缓动已在关键帧中手动实现
       fill: "forwards"  // 保持最终状态，避免跳回初始位置
     });
@@ -1197,6 +1197,7 @@ function animateAiDiscardPair(playerIdx, card1, card2, fromRectOverride, onCompl
   }
 
   console.log(`[AI出牌动画] AI${playerIdx} 开始简化出牌动画`);
+  const AI_DISCARD_MS = 440; // 原 520，加快一点
   try {
     const fromHandEl = seatHandElByPlayerIndex(playerIdx);
     const discardPile = document.getElementById("discardPile");
@@ -1253,7 +1254,7 @@ function animateAiDiscardPair(playerIdx, card1, card2, fromRectOverride, onCompl
       // 等待出牌动画完成后再清除标记（520ms + 50ms buffer）
       setTimeout(() => {
         fromHandEl.dataset.adjusting = "";
-      }, 570);
+      }, AI_DISCARD_MS + 50);
     }
 
     // Sort cards: _A to left pile, _B to right pile
@@ -1441,15 +1442,15 @@ function animateAiDiscardPair(playerIdx, card1, card2, fromRectOverride, onCompl
 
       // 外层容器动画：位置移动
       const outerAnim = outerContainer.animate(outerKeyframes, {
-        duration: 520,
+        duration: AI_DISCARD_MS,
         easing: "linear"
       });
       // 牌飞到牌堆上方时（约 42%）响出牌声，不等回弹结束
-      setTimeout(() => Sound.play("discard", 80), 520 * 0.42);
+      setTimeout(() => Sound.play("discard", 80), AI_DISCARD_MS * 0.42);
 
       // 内层容器动画：翻转
       flipContainer.animate(flipKeyframes, {
-        duration: 520,
+        duration: AI_DISCARD_MS,
         easing: "linear"
       });
 
@@ -1459,7 +1460,7 @@ function animateAiDiscardPair(playerIdx, card1, card2, fromRectOverride, onCompl
         { boxShadow: "0 4px 12px rgba(0,0,0,0.15)", offset: 0.4 },
         { boxShadow: "0 4px 12px rgba(0,0,0,0)", offset: 0.9 },
         { boxShadow: "0 4px 12px rgba(0,0,0,0)", offset: 1 }
-      ], { duration: 520, fill: "forwards" });
+      ], { duration: AI_DISCARD_MS, fill: "forwards" });
 
       // 正面内容已在初始化时填充，不需要90度检测了
 
@@ -2489,7 +2490,7 @@ function runAiLoop(game, settings) {
     console.log(`[AI回合开始] AI${game.currentPlayerIndex} 发现初始配对，先出牌`);
 
     // 延迟后开始出牌（给AI一个"思考"的时间）- 减半版
-    const initialThinkingDelay = speedUpAi ? 200 : (300 + Math.random() * 200);  // 0.3-0.5s
+    const initialThinkingDelay = speedUpAi ? 200 : (220 + Math.random() * 160);  // 0.22-0.38s
 
     window.clearTimeout(runAiLoop._t);
     runAiLoop._t = window.setTimeout(() => {
@@ -2527,7 +2528,7 @@ function runAiLoop(game, settings) {
             }
 
             // 等待后继续出下一对 - 减半版
-            const thinkingDelay = speedUpAi ? 150 : (400 + Math.random() * 200);  // 0.4-0.6s
+            const thinkingDelay = speedUpAi ? 150 : (300 + Math.random() * 150);  // 0.3-0.45s
             window.setTimeout(discardAllInitialPairs, thinkingDelay);
           }, 100); // 延迟 100ms，确保 adjusting 标记还在
         });
@@ -2658,7 +2659,7 @@ function runAiLoop(game, settings) {
                     showLastEvent(game, settings);
 
                     // Wait a bit before next pair - 减半版
-                    const thinkingDelay = 400 + Math.random() * 200;  // 0.4-0.6s
+                    const thinkingDelay = 300 + Math.random() * 150;  // 0.3-0.45s
                     window.setTimeout(discardNextPair, thinkingDelay);
                   }, 100);
                 });
@@ -2706,7 +2707,7 @@ function initUi(imagePairs = []) {
   const settings = {
     showBothOnDraw: true,
     autoAdvanceMs: 0,
-    aiPaceMs: 325,  // 减半: 650 → 325
+    aiPaceMs: 250,  // 650 → 325 → 250（再快约 25%）
   };
 
   const autoNextToggle = $("#autoNextToggle");
@@ -3741,7 +3742,7 @@ function initUi(imagePairs = []) {
 
   function syncSettings() {
     settings.autoAdvanceMs = 0; // no longer used for turn flow
-    settings.aiPaceMs = autoNextToggle.checked ? 325 : 9999999;  // 减半: 650 → 325
+    settings.aiPaceMs = autoNextToggle.checked ? 250 : 9999999;  // 650 → 325 → 250
 
     const pc = Number(pairCountInput.value);
     pairCountNum.value = String(pc);
@@ -4008,7 +4009,7 @@ function initUi(imagePairs = []) {
                   // 延迟后出下一对
                   pairIdx++;
                   if (pairIdx < pairs.length) {
-                    const pairDelay = 800 + Math.random() * 400;
+                    const pairDelay = 550 + Math.random() * 300; // 开场每对之间 0.55-0.85s
                     setTimeout(() => {
                       playNextPair();
                     }, pairDelay);
@@ -4395,6 +4396,7 @@ function initUi(imagePairs = []) {
     // Restore content visibility (in case it was hidden during animation)
     if (drawOverlayInner) drawOverlayInner.style.opacity = "";
     drawRow.innerHTML = "";
+    drawRow.dataset.picked = "";
     drawScroll.classList.add("hidden");
     drawThumb.style.setProperty("--thumbW", "100%");
     drawThumb.style.setProperty("--thumbX", "0px");
@@ -4458,6 +4460,8 @@ function initUi(imagePairs = []) {
           return;
         }
         if (game.turnHasDrawn) return;
+        if (drawRow.dataset.picked === "1") return; // 已经选过一张（拖动松手和原生点击可能各触发一次）
+        drawRow.dataset.picked = "1";
         Sound.play("select");
         markHumanAction();
 
@@ -4797,7 +4801,7 @@ function initUi(imagePairs = []) {
           const nCards = target.hand.length;
           const CARD_W = 140;
           const GAP = 12;
-          const PAD = 6; // .drawRow padding left/right
+          const PAD = 14; // .drawRow padding left/right（和 CSS 保持一致）
           const contentW = nCards * CARD_W + Math.max(0, nCards - 1) * GAP;
           const avail = Math.max(0, drawRow.clientWidth - PAD * 2);
           const fits = contentW <= avail + 1;
@@ -4851,6 +4855,7 @@ function initUi(imagePairs = []) {
   function closeDrawOverlay() {
     drawOverlay.classList.add("hidden");
     drawRow.innerHTML = "";
+    drawRow.dataset.picked = "";
     drawScroll.classList.add("hidden");
     if (typeof recalcDrawScrollSoon === "function") recalcDrawScrollSoon();
     if (drawOverlayInner) {
@@ -4881,6 +4886,69 @@ function initUi(imagePairs = []) {
     if (e.target === drawOverlay) cancelDrawOverlay();
   });
   btnDrawClose.addEventListener("click", cancelDrawOverlay);
+
+  // ===== 抽牌界面：外发光 + 拖动选牌 =====
+  // 手指（或鼠标）按在牌上 → 这张牌外发光；按住左右拖动 → 发光跟着手指走到手指下面那张；
+  // 拖到左右边缘时这一排自动滚动；松手 → 抽正在发光的那张。只是轻点 = 直接抽这张（和原来一样）
+  let pickPointer = null;
+  let pickGlow = null;
+  let pickAutoRaf = 0;
+  let pickX = 0, pickY = 0;
+  function setPickGlow(el) {
+    if (pickGlow === el) return;
+    if (pickGlow) pickGlow.classList.remove("glow");
+    pickGlow = el;
+    if (el) el.classList.add("glow");
+  }
+  function drawCardAt(x, y) {
+    const el = document.elementFromPoint(x, y);
+    const c = el && el.closest ? el.closest("#drawRow .drawBack") : null;
+    return c && c.classList.contains("in") ? c : null;
+  }
+  function pickAutoScroll() {
+    pickAutoRaf = 0;
+    if (pickPointer == null) return;
+    const r = drawRow.getBoundingClientRect();
+    const EDGE = 48;
+    let v = 0;
+    if (pickX < r.left + EDGE) v = -Math.min(1, (r.left + EDGE - pickX) / EDGE) * 14;
+    else if (pickX > r.right - EDGE) v = Math.min(1, (pickX - (r.right - EDGE)) / EDGE) * 14;
+    if (!v) return;
+    drawRow.scrollLeft += v;
+    const c = drawCardAt(pickX, pickY);
+    if (c) setPickGlow(c);
+    pickAutoRaf = requestAnimationFrame(pickAutoScroll);
+  }
+  drawRow.addEventListener("pointerdown", (e) => {
+    const c = e.target.closest(".drawBack");
+    if (!c || !c.classList.contains("in") || drawRow.dataset.picked === "1") return;
+    pickPointer = e.pointerId;
+    pickX = e.clientX; pickY = e.clientY;
+    setPickGlow(c);
+    try { drawRow.setPointerCapture(e.pointerId); } catch (err) {}
+    e.preventDefault();
+  });
+  drawRow.addEventListener("pointermove", (e) => {
+    if (e.pointerId !== pickPointer) return;
+    pickX = e.clientX; pickY = e.clientY;
+    const c = drawCardAt(pickX, pickY);
+    if (c) setPickGlow(c);
+    if (!pickAutoRaf) pickAutoRaf = requestAnimationFrame(pickAutoScroll);
+  });
+  function endPick(e, commit) {
+    if (e.pointerId !== pickPointer) return;
+    pickPointer = null;
+    cancelAnimationFrame(pickAutoRaf);
+    pickAutoRaf = 0;
+    const c = pickGlow;
+    if (commit && c && drawRow.dataset.picked !== "1") {
+      c.click(); // 走原来的抽牌逻辑；重复点击由 dataset.picked 拦住
+    } else {
+      setPickGlow(null);
+    }
+  }
+  drawRow.addEventListener("pointerup", (e) => endPick(e, true));
+  drawRow.addEventListener("pointercancel", (e) => endPick(e, false));
 
   // Draw overlay: keep custom scrollbar perfectly in sync with drawRow.scrollLeft (and allow dragging).
   // Rebuilt model (for maximum smoothness):
