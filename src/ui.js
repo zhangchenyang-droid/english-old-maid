@@ -112,7 +112,7 @@ const Sound = (() => {
     discard: "./assets/audio/discard.mp3",
   };
   // 素材原始响度差别很大（抽牌比发牌响约 18dB），这里分别配平
-  const GAIN = { deal: 1.0, draw: 0.35, discard: 0.9 };
+  const GAIN = { deal: 0.8, draw: 0.35, discard: 0.9 };
   const BGM_VOLUME = 0.3;
 
   let muted = false;
@@ -163,6 +163,47 @@ const Sound = (() => {
     src.start();
   }
 
+  function throttled(key, gap) {
+    const now = performance.now();
+    if (now - (lastPlay[key] || 0) < gap) return true;
+    lastPlay[key] = now;
+    return false;
+  }
+
+  // 现场合成一个短音：从 f0 滑到 f1，带低通，不需要素材文件
+  function tone(t, f0, f1, dur, peak, type = "sine", lpHz = 1800) {
+    const osc = ctx.createOscillator();
+    osc.type = type;
+    osc.frequency.setValueAtTime(f0, t);
+    osc.frequency.exponentialRampToValueAtTime(f1, t + dur * 0.8);
+    const lp = ctx.createBiquadFilter();
+    lp.type = "lowpass";
+    lp.frequency.value = lpHz;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(peak, t + 0.008);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    osc.connect(lp);
+    lp.connect(g);
+    g.connect(ctx.destination);
+    osc.start(t);
+    osc.stop(t + dur + 0.02);
+  }
+
+  // 有效点击：清亮的上扬两音"叮咚"
+  function confirm() {
+    if (muted || !ctx || throttled("btn", 60)) return;
+    const t = ctx.currentTime;
+    tone(t, 880, 900, 0.09, 0.16, "triangle", 4000);
+    tone(t + 0.06, 1320, 1350, 0.14, 0.14, "triangle", 4000);
+  }
+
+  // 无效点击：柔和下滑的"啵"
+  function invalid() {
+    if (muted || !ctx || throttled("btn", 60)) return;
+    tone(ctx.currentTime, 760, 380, 0.09, 0.22);
+  }
+
   function startBgm() {
     bgmWanted = true;
     if (!muted && !document.hidden) bgm.play().catch(() => {});
@@ -178,13 +219,23 @@ const Sound = (() => {
   for (const ev of ["pointerdown", "touchstart", "keydown"]) {
     document.addEventListener(ev, unlock, { capture: true, passive: true });
   }
+  // 普通按钮按下就给确认音（unlock 在捕获阶段先执行，第一次按也能响）。
+  // 提示/匹配出牌/结束回合要看操作是否生效，由各自的处理函数播确认音或无效音
+  const JUDGED_BUTTONS = new Set(["btnHintImg", "btnMatchImg", "btnEndTurnImg", "btnEndTurn", "btnTryMatch"]);
+  document.addEventListener("pointerdown", (e) => {
+    const btn = e.target.closest("button");
+    if (!btn || btn.disabled || JUDGED_BUTTONS.has(btn.id)) return;
+    // 抽牌界面里的牌也是 button，点它会有抽牌声，不再叠加按钮声
+    if (btn.classList.contains("drawBack")) return;
+    confirm();
+  }, { passive: true });
   // 切到后台/锁屏时暂停音乐，回来继续
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) bgm.pause();
     else if (bgmWanted && !muted) bgm.play().catch(() => {});
   });
 
-  return { play, startBgm, setMuted, isMuted: () => muted };
+  return { play, confirm, invalid, startBgm, setMuted, isMuted: () => muted };
 })();
 
 // 飞行中的牌：目标手牌要预留的空位数、源手牌里已经飞走（隐藏）的牌。
@@ -569,9 +620,10 @@ function flyToDiscard(fromEl, game) {
     easing: "linear",
     fill: "forwards"
   });
+  // 牌在约 42% 时已飞到牌堆上方（后面只是轻微回弹），出牌声在这时响才跟画面对得上
+  setTimeout(() => Sound.play("discard", 80), 520 * 0.42);
 
   anim.onfinish = () => {
-    Sound.play("discard", 80);
     pendingDiscardIds.delete(cardId);
     const landed = document.querySelector(`#discardPile .discardCard[data-card-id="${CSS.escape(cardId)}"]`);
     if (landed) landed.style.visibility = "";
@@ -1362,6 +1414,8 @@ function animateAiDiscardPair(playerIdx, card1, card2, fromRectOverride, onCompl
         duration: 520,
         easing: "linear"
       });
+      // 牌飞到牌堆上方时（约 42%）响出牌声，不等回弹结束
+      setTimeout(() => Sound.play("discard", 80), 520 * 0.42);
 
       // 内层容器动画：翻转
       flipContainer.animate(flipKeyframes, {
@@ -1380,7 +1434,6 @@ function animateAiDiscardPair(playerIdx, card1, card2, fromRectOverride, onCompl
       // 正面内容已在初始化时填充，不需要90度检测了
 
       outerAnim.onfinish = () => {
-        Sound.play("discard", 80);
         // 立即移除飞行元素（renderDiscardPile 会无缝接管显示）
         outerContainer.remove();
         completed++;
@@ -3721,10 +3774,10 @@ function initUi(imagePairs = []) {
       const idx = Number(el.dataset.dealIndex || 0);
       el.style.animationDelay = `${base + idx * stepHuman}ms`;
     }
-    // 发牌音效：跟着玩家手牌一张张飞入的节奏
+    // 发牌音效：跟着玩家手牌飞入的节奏，每隔一张响一次（每张都响太密、太硬）
     for (const el of allFace) {
       const idx = Number(el.dataset.dealIndex || 0);
-      setTimeout(() => Sound.play("deal", 30), base + idx * stepHuman);
+      if (idx % 2 === 0) setTimeout(() => Sound.play("deal", 30), base + idx * stepHuman);
     }
     // AI: simple stagger per seat
     const stepAi = 18;
@@ -5453,10 +5506,13 @@ function initUi(imagePairs = []) {
   );
 
   btnHintImg.addEventListener("click", () => {
-    if (isDealing) return;
-    if (!game || game.gameOver) return;
+    if (isDealing) return Sound.invalid();
+    if (!game || game.gameOver) return Sound.invalid();
     const current = game.players[game.currentPlayerIndex];
-    if (!current || current.kind !== "human") return;
+    if (!current || current.kind !== "human") return Sound.invalid();
+    // 手里没有对子可提示：无效
+    if (!window.Game.findAnyPairInHand(game.players[0].hand)) return Sound.invalid();
+    Sound.confirm();
     markHumanAction();
 
     // Toggle hint: if already showing hint (2 cards selected), clear them; otherwise show hint
@@ -5479,13 +5535,13 @@ function initUi(imagePairs = []) {
   });
 
   btnMatchImg.addEventListener("click", () => {
-    if (isDealing) return;
+    if (isDealing) return Sound.invalid();
     // same as "匹配出牌"
     btnTryMatch.click();
   });
 
   btnEndTurnImg.addEventListener("click", () => {
-    if (isDealing) return;
+    if (isDealing) return Sound.invalid();
     btnEndTurn.click();
   });
 
@@ -5564,11 +5620,11 @@ function initUi(imagePairs = []) {
   });
 
   btnTryMatch.addEventListener("click", () => {
-    if (!game || game.gameOver) return;
+    if (!game || game.gameOver) return Sound.invalid();
     advancePastOutPlayers();
     const current = game.players[game.currentPlayerIndex];
-    if (!current || current.out || current.kind !== "human") return;
-    if (selected.length !== 2) return;
+    if (!current || current.out || current.kind !== "human") return Sound.invalid();
+    if (selected.length !== 2) return Sound.invalid();
     markHumanAction();
     const [a, b] = selected;
 
@@ -5576,6 +5632,8 @@ function initUi(imagePairs = []) {
     const aEl = $("#pBottomHand").querySelector(`.faceCard[data-card-id="${CSS.escape(a)}"]`);
     const bEl = $("#pBottomHand").querySelector(`.faceCard[data-card-id="${CSS.escape(b)}"]`);
     const res = window.Game.tryDiscardPairByCardIds(game, 0, a, b);
+    if (res.ok) Sound.confirm();
+    else Sound.invalid();
     if (res.ok) {
       const bottomHandEl = $("#pBottomHand");
 
@@ -5643,12 +5701,13 @@ function initUi(imagePairs = []) {
   });
 
   btnEndTurn.addEventListener("click", () => {
-    if (!game || game.gameOver) return;
+    if (!game || game.gameOver) return Sound.invalid();
     const current = game.players[game.currentPlayerIndex];
-    if (current.kind !== "human") return;
+    if (current.kind !== "human") return Sound.invalid();
     const upstreamIdx = window.Game.getUpstreamPlayerIndex(game);
     const canDrawUpstream = window.Game.canDrawFrom(game, upstreamIdx);
-    if (!game.turnHasDrawn && canDrawUpstream) return;
+    if (!game.turnHasDrawn && canDrawUpstream) return Sound.invalid(); // 还没抽牌不能结束回合
+    Sound.confirm();
     markHumanAction();
     clearSelection();
     closeDrawOverlay();
