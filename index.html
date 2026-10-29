@@ -8,7 +8,7 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <title>抽乌龟（儿童英语学习版）</title>
     <link rel="manifest" href="./manifest.json" />
-    <link rel="stylesheet" href="./styles.css?v=20261029m" />
+    <link rel="stylesheet" href="./styles.css?v=20261029n" />
   </head>
   <body>
     <div class="app">
@@ -145,6 +145,14 @@
             <button id="btnWinClose" class="winBtn winClose" type="button" aria-label="关闭"><img src="./assets/ui_buttons/win-close.png" alt="" draggable="false" /></button>
           </div>
         </div>
+        <!-- 失败面板：和胜利面板同一套版式（底图 + 重试 + X，X 复用胜利面板的图） -->
+        <div id="loseOverlay" class="winOverlay hidden" role="dialog" aria-modal="true" aria-label="失败">
+          <div class="winPanel">
+            <img class="winPanelBg" src="./assets/ui_buttons/lose-panel.webp" alt="失败…" draggable="false" />
+            <button id="btnLoseRetry" class="winBtn winNext" type="button" aria-label="重试"><img src="./assets/ui_buttons/lose-retry.png" alt="" draggable="false" /></button>
+            <button id="btnLoseClose" class="winBtn winClose" type="button" aria-label="关闭"><img src="./assets/ui_buttons/win-close.png" alt="" draggable="false" /></button>
+          </div>
+        </div>
         <div id="endOverlay" class="endOverlay hidden" role="dialog" aria-modal="true">
           <div class="endCard">
             <div id="endTitle" class="endTitle"></div>
@@ -185,12 +193,12 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 
     <!-- deck -->
-    <script src="./deck/image_pairs.js?v=20261029m"></script>
+    <script src="./deck/image_pairs.js?v=20261029n"></script>
     <!-- Joker summon effect -->
-    <script src="./src/joker-summon.js?v=20261029m"></script>
+    <script src="./src/joker-summon.js?v=20261029n"></script>
     <!-- app (no modules so file:// works) -->
-    <script src="./src/game.js?v=20261029m"></script>
-    <script src="./src/ui.js?v=20261029m"></script>
+    <script src="./src/game.js?v=20261029n"></script>
+    <script src="./src/ui.js?v=20261029n"></script>
     <script>
       // 图片预加载功能
       function preloadImages(imagePairs, onProgress, onComplete) {
@@ -217,6 +225,8 @@
         images.push('./assets/ui_buttons/win-panel.webp');
         images.push('./assets/ui_buttons/win-next.png');
         images.push('./assets/ui_buttons/win-close.png');
+        images.push('./assets/ui_buttons/lose-panel.webp');
+        images.push('./assets/ui_buttons/lose-retry.png');
 
         let loaded = 0;
         const total = images.length;

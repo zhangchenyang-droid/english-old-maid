@@ -3781,6 +3781,7 @@ function initUi(imagePairs = []) {
     $("#game").classList.remove("hidden");
     endOverlay.classList.add("hidden");
     $("#winOverlay").classList.add("hidden");
+    $("#loseOverlay").classList.add("hidden");
     updateTuneButtonState();
     selected = [];
     // Deal animation: render seats, then slide cards in from bottom with delays (no opacity changes).
@@ -4157,6 +4158,7 @@ function initUi(imagePairs = []) {
     runAiLoop._t = null;
     endOverlay.classList.add("hidden");
     $("#winOverlay").classList.add("hidden");
+    $("#loseOverlay").classList.add("hidden");
     updateTuneButtonState();
   }
 
@@ -4173,6 +4175,16 @@ function initUi(imagePairs = []) {
       console.error(`[关卡切换] 清除失败:`, e);
     }
 
+    showSetupScreen();
+  });
+
+  // 失败面板：重试 = 重新挑战本关；X = 回设置页，进度不变（再点开始游戏还是这一关）
+  $("#btnLoseRetry").addEventListener("click", () => {
+    $("#loseOverlay").classList.add("hidden");
+    startNewGame();
+  });
+  $("#btnLoseClose").addEventListener("click", () => {
+    $("#loseOverlay").classList.add("hidden");
     showSetupScreen();
   });
 
@@ -5872,6 +5884,12 @@ function initUi(imagePairs = []) {
 
       // 显示关卡结果
       if (youLose) {
+        // 失败面板底图加载成功就用新面板（重试 / X）；没有底图时退回原来的文字弹窗
+        const loseBg = document.querySelector("#loseOverlay .winPanelBg");
+        if (loseBg && loseBg.complete && loseBg.naturalWidth > 0) {
+          $("#loseOverlay").classList.remove("hidden");
+          return;
+        }
         // 失败：只能重新挑战本关
         endTitle.textContent = `第${currentLevel}关失败`;
         endSubtitle.textContent = `你手里留着"王八牌"！`;
