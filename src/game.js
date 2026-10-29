@@ -75,6 +75,79 @@ function buildPlayers(playerCount) {
   }));
 }
 
+// 随机局发牌：每人手里恰好有 minPairs~maxPairs 对能直接消除，其余都是单张（另一半在别人手里）。
+// 返回每人的手牌数组；凑不出来时返回 null
+function dealWithPairRange(deck, playerCount, minPairs, maxPairs, rand = Math.random) {
+  const byPair = new Map();
+  for (const c of deck) {
+    if (!c.pairId) continue;
+    if (!byPair.has(c.pairId)) byPair.set(c.pairId, []);
+    byPair.get(c.pairId).push(c);
+  }
+  const pairs = Array.from(byPair.values()).filter((cs) => cs.length === 2);
+  const loose = deck.filter((c) => !c.pairId || byPair.get(c.pairId).length !== 2); // 不成对的牌（正常没有）
+  const total = deck.length;
+  const sizes = Array.from({ length: playerCount }, (_, i) =>
+    Math.floor(total / playerCount) + (i < total % playerCount ? 1 : 0));
+
+  // 按剩余空位加权随机选一个人（exclude 里的不选）
+  function pickWeighted(cap, exclude) {
+    let sum = 0;
+    cap.forEach((c, i) => { if (!exclude.includes(i)) sum += c; });
+    let r = rand() * sum;
+    for (let i = 0; i < cap.length; i++) {
+      if (exclude.includes(i) || cap[i] <= 0) continue;
+      r -= cap[i];
+      if (r <= 0) return i;
+    }
+    return cap.findIndex((c, i) => c > 0 && !exclude.includes(i));
+  }
+
+  for (let attempt = 0; attempt < 30; attempt++) {
+    shuffleInPlace(pairs, rand);
+    // 每人随机定能消除几对
+    const k = sizes.map((n) => {
+      const hi = Math.min(maxPairs, Math.floor(n / 2));
+      const lo = Math.min(minPairs, hi);
+      return lo + Math.floor(rand() * (hi - lo + 1));
+    });
+    if (k.reduce((a, b) => a + b, 0) > pairs.length) continue;
+
+    const hands = sizes.map(() => []);
+    let pi = 0;
+    k.forEach((cnt, i) => { for (let j = 0; j < cnt; j++) hands[i].push(...pairs[pi++]); });
+    const cap = sizes.map((n, i) => n - hands[i].length);
+
+    // 散牌不会凑成对，放到空位最多的人手里
+    for (const c of loose) {
+      const i = cap.indexOf(Math.max(...cap));
+      hands[i].push(c); cap[i]--;
+    }
+
+    // 剩下的对子拆开：两半必须给两个不同的人。
+    // 空位占剩余总空位一半的人必须先选上，否则后面会发不完；其余按空位加权随机
+    let ok = true;
+    for (; pi < pairs.length; pi++) {
+      const R = cap.reduce((a, b) => a + b, 0);
+      const chosen = cap.map((c, i) => [c, i]).filter(([c]) => c * 2 >= R).map(([, i]) => i).slice(0, 2);
+      while (chosen.length < 2) {
+        const i = pickWeighted(cap, chosen);
+        if (i < 0) break;
+        chosen.push(i);
+      }
+      if (chosen.length < 2 || cap[chosen[0]] <= 0 || cap[chosen[1]] <= 0) { ok = false; break; }
+      const [a, b] = rand() < 0.5 ? pairs[pi] : [pairs[pi][1], pairs[pi][0]];
+      hands[chosen[0]].push(a); hands[chosen[1]].push(b);
+      cap[chosen[0]]--; cap[chosen[1]]--;
+    }
+    if (!ok || cap.some((c) => c !== 0)) continue;
+
+    hands.forEach((h) => shuffleInPlace(h, rand));
+    return hands;
+  }
+  return null;
+}
+
 function initialDeal(deck, playerCount, rand = Math.random) {
   const players = buildPlayers(playerCount);
   shuffleInPlace(deck, rand);
@@ -87,12 +160,17 @@ function initialDeal(deck, playerCount, rand = Math.random) {
   const tracker = window.__GAME_ROUND_TRACKER__;
   const currentLevel = tracker ? tracker.currentLevel : 1;
 
-  // ============ 第3关之后：随机局（纯随机发牌，无任何配对控制） ============
+  // ============ 第3关之后：随机局（每人开局能消除 2~4 对，其余随机） ============
   if (currentLevel > 3) {
-    // deck 已洗过，整副轮流发给每个玩家
-    deck.forEach((card, i) => players[i % playerCount].hand.push(card));
+    const dealt = dealWithPairRange(deck, playerCount, 2, 4, rand);
+    if (dealt) {
+      dealt.forEach((hand, i) => { players[i].hand = hand; });
+    } else {
+      // 牌数太少等极端情况凑不出来：退回纯随机
+      deck.forEach((card, i) => players[i % playerCount].hand.push(card));
+    }
     for (const p of players) p.out = p.hand.length === 0;
-    console.log(`[随机局] 纯随机发牌:`, players.map(p => `${p.name}:${p.hand.length}张`).join(' '));
+    console.log(`[随机局] 发牌:`, players.map(p => `${p.name}:${p.hand.length}张`).join(' '));
     return players;
   }
 
