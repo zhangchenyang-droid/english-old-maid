@@ -111,12 +111,13 @@ const Sound = (() => {
     draw: "./assets/audio/draw.mp3",
     discard: "./assets/audio/discard.mp3",
     win: "./assets/audio/win.mp3",
+    lose: "./assets/audio/lose.mp3",
     tap: "./assets/audio/tap.mp3",       // 点上家手牌
     spread: "./assets/audio/spread.mp3", // 上家手牌展开
     select: "./assets/audio/select.mp3", // 点选展开的牌
   };
   // 素材原始响度差别很大（抽牌比发牌响约 18dB），这里分别配平
-  const GAIN = { deal: 0.8, draw: 0.75, discard: 0.9, win: 1.0, tap: 0.8, spread: 0.6, select: 0.8 };
+  const GAIN = { deal: 0.8, draw: 0.75, discard: 0.9, win: 1.0, lose: 1.0, tap: 0.8, spread: 0.6, select: 0.8 };
   const BGM_VOLUME = 0.3;
 
   let muted = false;
@@ -219,12 +220,14 @@ const Sound = (() => {
     tone(ctx.currentTime, 760, 380, 0.09, 0.22);
   }
 
-  // 胜利：播欢呼，同时把背景音乐压低，播完再慢慢回来
-  function win() {
-    play("win", 300);
+  // 胜利 / 失败：播结算音，同时把背景音乐压低，播完再慢慢回来
+  function win() { endJingle("win"); }
+  function lose() { endJingle("lose"); }
+  function endJingle(name) {
+    play(name, 300);
     if (!ctx || !bgmGain || muted) return;
     const t = ctx.currentTime;
-    const dur = buffers.win ? buffers.win.duration : 3.5;
+    const dur = buffers[name] ? buffers[name].duration : 3.5;
     bgmGain.gain.cancelScheduledValues(t);
     bgmGain.gain.setTargetAtTime(BGM_VOLUME * 0.3, t, 0.08);
     bgmGain.gain.setTargetAtTime(BGM_VOLUME, t + dur, 0.6);
@@ -265,7 +268,7 @@ const Sound = (() => {
     }
   });
 
-  return { play, confirm, invalid, win, startBgm, setMuted, isMuted: () => muted };
+  return { play, confirm, invalid, win, lose, startBgm, setMuted, isMuted: () => muted };
 })();
 
 // 飞行中的牌：目标手牌要预留的空位数、源手牌里已经飞走（隐藏）的牌。
@@ -5883,6 +5886,13 @@ function initUi(imagePairs = []) {
       const youLose = loser && loser.id === g.players[0].id;
       const currentLevel = window.__GAME_ROUND_TRACKER__.currentLevel;
 
+      // 结算音每局只播一次（游戏结束后 renderAll 可能被调用好几次）
+      if (!g.endSoundPlayed) {
+        g.endSoundPlayed = true;
+        if (youLose) Sound.lose();
+        else Sound.win();
+      }
+
       // 显示关卡结果
       if (youLose) {
         // 失败面板底图加载成功就用新面板（重试 / X）；没有底图时退回原来的文字弹窗
@@ -5900,7 +5910,6 @@ function initUi(imagePairs = []) {
       } else {
         // 通过：显示胜利面板（只有"进入下一关"和 X），播鸟群欢呼
         $("#winOverlay").classList.remove("hidden");
-        Sound.win();
         return;
       }
 
