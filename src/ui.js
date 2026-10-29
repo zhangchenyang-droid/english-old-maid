@@ -138,6 +138,15 @@ const Sound = (() => {
       const AC = window.AudioContext || window.webkitAudioContext;
       if (!AC) return;
       ctx = new AC();
+      // iOS 会忽略 <audio>.volume，背景音乐会按 100% 播放；接到 Web Audio 的增益节点上，音量在 iPhone 上也生效
+      try {
+        const node = ctx.createMediaElementSource(bgm);
+        const g = ctx.createGain();
+        g.gain.value = BGM_VOLUME;
+        node.connect(g);
+        g.connect(ctx.destination);
+        bgm.volume = 1;
+      } catch (e) {}
       for (const name of Object.keys(FILES)) {
         raw[name].then((ab) => {
           if (!ab) return;
@@ -206,6 +215,7 @@ const Sound = (() => {
 
   function startBgm() {
     bgmWanted = true;
+    if (ctx && ctx.state === "suspended") ctx.resume();
     if (!muted && !document.hidden) bgm.play().catch(() => {});
   }
 
@@ -232,7 +242,10 @@ const Sound = (() => {
   // 切到后台/锁屏时暂停音乐，回来继续
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) bgm.pause();
-    else if (bgmWanted && !muted) bgm.play().catch(() => {});
+    else if (bgmWanted && !muted) {
+      if (ctx && ctx.state === "suspended") ctx.resume();
+      bgm.play().catch(() => {});
+    }
   });
 
   return { play, confirm, invalid, startBgm, setMuted, isMuted: () => muted };
