@@ -1061,6 +1061,15 @@ input[type="number"]:focus {
   transform: translateY(8px) translateX(0px) scale(0.98);
 }
 
+/* 全局 button:hover 会用 background 简写把牌背图片换成半透明白色，看起来像牌变透明；这里把牌背保留住 */
+.drawBack:hover,
+.drawBack:active {
+  background-color: transparent;
+  background-image: url("./assets/card-back.png");
+  background-size: cover;
+  background-position: center;
+}
+
 /* Transition ghost: pile -> spread */
 .drawTransitionGhost {
   position: fixed;

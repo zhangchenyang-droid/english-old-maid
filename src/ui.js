@@ -111,9 +111,12 @@ const Sound = (() => {
     draw: "./assets/audio/draw.mp3",
     discard: "./assets/audio/discard.mp3",
     win: "./assets/audio/win.mp3",
+    tap: "./assets/audio/tap.mp3",       // 点上家手牌
+    spread: "./assets/audio/spread.mp3", // 上家手牌展开
+    select: "./assets/audio/select.mp3", // 点选展开的牌
   };
   // 素材原始响度差别很大（抽牌比发牌响约 18dB），这里分别配平
-  const GAIN = { deal: 0.8, draw: 0.35, discard: 0.9, win: 1.0 };
+  const GAIN = { deal: 0.8, draw: 0.75, discard: 0.9, win: 1.0, tap: 0.8, spread: 0.6, select: 0.8 };
   const BGM_VOLUME = 0.3;
 
   let muted = false;
@@ -4455,6 +4458,7 @@ function initUi(imagePairs = []) {
           return;
         }
         if (game.turnHasDrawn) return;
+        Sound.play("select");
         markHumanAction();
 
         const tracker = window.__GAME_ROUND_TRACKER__;
@@ -4767,6 +4771,7 @@ function initUi(imagePairs = []) {
       // stagger in: 从左到右依次快速渐显，每张卡间隔40ms
       window.setTimeout(() => {
         b.classList.add("in");
+        if (i === 0) Sound.play("spread", 200);
 
         // 调试：打印第一张卡的中心点位置
         if (i === 0) {
@@ -5586,12 +5591,16 @@ function initUi(imagePairs = []) {
 
   btnMatchImg.addEventListener("click", () => {
     if (isDealing) return Sound.invalid();
+    // 文字按钮在无效时是 disabled 的，.click() 会被浏览器直接忽略，所以无效音要在这里播
+    if (btnTryMatch.disabled) return Sound.invalid();
     // same as "匹配出牌"
     btnTryMatch.click();
   });
 
   btnEndTurnImg.addEventListener("click", () => {
     if (isDealing) return Sound.invalid();
+    if (btnEndTurn.disabled) return Sound.invalid(); // 同上：disabled 按钮的 .click() 不会触发
+
     btnEndTurn.click();
   });
 
@@ -5607,6 +5616,7 @@ function initUi(imagePairs = []) {
     if (current.kind !== "human") return;
     const fromIdx = Number(b.dataset.fromPlayerIndex);
     humanDrawStarted = true; // 先标记，markHumanAction 安排提示时就会跳过抽牌提示
+    Sound.play("tap");
     markHumanAction();
 
     // 记录当前点击的元素
