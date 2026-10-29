@@ -116,9 +116,10 @@ const Sound = (() => {
     spread: "./assets/audio/spread.mp3", // 上家手牌展开
     select: "./assets/audio/select.mp3", // 点选展开的牌
     pick: "./assets/audio/pick.mp3",     // 点选自己手里的牌（牌弹出来）
+    unpick: "./assets/audio/unpick.mp3", // 再点一下收回
   };
   // 素材原始响度差别很大（抽牌比发牌响约 18dB），这里分别配平
-  const GAIN = { deal: 0.8, draw: 0.75, discard: 0.9, win: 1.0, lose: 1.0, tap: 0.8, spread: 0.6, select: 0.8, pick: 0.3 };
+  const GAIN = { deal: 0.8, draw: 0.75, discard: 0.9, win: 1.0, lose: 1.0, tap: 0.8, spread: 0.6, select: 0.8, pick: 0.45, unpick: 0.4 };
   const BGM_VOLUME = 0.3;
 
   let muted = false;
@@ -5622,10 +5623,12 @@ function initUi(imagePairs = []) {
     const id = c.dataset.cardId;
     if (!id) return;
     markHumanAction();
-    if (selected.includes(id)) selected = selected.filter((x) => x !== id);
-    else {
+    if (selected.includes(id)) {
+      selected = selected.filter((x) => x !== id);
+      Sound.play("unpick", 30); // 牌收回去
+    } else {
       selected = selected.length >= 2 ? [selected[1], id] : [...selected, id];
-      Sound.play("pick", 30); // 牌弹出来：短促、轻声的摩擦声
+      Sound.play("pick", 30); // 牌弹出来：短促、轻声的纸牌声
     }
     renderSelectionHighlights();
     syncSelectionUi();
