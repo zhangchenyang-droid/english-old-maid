@@ -3692,6 +3692,7 @@ function initUi(imagePairs = []) {
     hintT = window.setTimeout(() => {
       // If user acted since scheduling, do nothing.
       if (lastHumanActionAt !== stamp) return;
+      if (!game || game.gameOver) return;
       if (needDraw && humanDrawStarted) return;
 
       // 检查手里是否有可配对的牌
@@ -3712,6 +3713,7 @@ function initUi(imagePairs = []) {
       hintHandT = window.setTimeout(() => {
         // 再次检查用户是否操作
         if (lastHumanActionAt !== stamp) return;
+        if (!game || game.gameOver) return;
 
         // 根据情况显示不同的小手提示
         if (game.turnHasDrawn && !window.Game.findAnyPairInHand(game.players[0].hand)) {
@@ -5838,8 +5840,6 @@ function initUi(imagePairs = []) {
         renderDiscardPile(game);
         renderAction(game, settings);
         showLastEvent(game, settings);
-        // 这一对出完游戏就结束了（场上只剩乌龟牌）：renderAll 负责弹胜利面板/失败弹窗，原来这里漏了，界面会卡住
-        if (game.gameOver) renderAll(game, settings);
       }, 500); // 略长于自适应动画时长（420ms）
 
       clearSelection();
@@ -5850,9 +5850,17 @@ function initUi(imagePairs = []) {
     // If the human just went out, immediately pass the turn.
     if (!game.gameOver && game.players[game.currentPlayerIndex]?.out) {
       closeDrawOverlay();
-      window.Game.advanceTurn(game);
-      renderAll(game, settings);
-      runAiLoop(game, settings);
+      window.Game.advanceTurn(game); // 玩家出完 = 游戏结束（胜利）
+      if (!game.gameOver) {
+        renderAll(game, settings);
+        runAiLoop(game, settings);
+      }
+    }
+    // 这一手出完游戏就结束了（玩家出完 / 场上只剩乌龟牌）：
+    // 等最后两张牌落到牌堆（飞行 520ms）再停一下，才由 renderAll 弹胜利面板 / 失败面板
+    if (res.ok && game.gameOver) {
+      const endedGame = game;
+      window.setTimeout(() => { if (game === endedGame) renderAll(game, settings); }, 520 + 300);
     }
   });
 
