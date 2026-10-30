@@ -5686,6 +5686,9 @@ function initUi(imagePairs = []) {
 
   btnMatchImg.addEventListener("click", () => {
     if (isDealing) return Sound.invalid();
+    // renderAction 每次都会无条件把匹配按钮设为 disabled（等下次点牌才恢复），
+    // 点提示后遇到一次刷新就会"选着两张却出不了"。这里先按当前选择重新判断一次
+    syncSelectionUi();
     // 文字按钮在无效时是 disabled 的，.click() 会被浏览器直接忽略，所以无效音要在这里播
     if (btnTryMatch.disabled) return Sound.invalid();
     // same as "匹配出牌"
@@ -5881,6 +5884,7 @@ function initUi(imagePairs = []) {
   renderAll = function patchedRenderAll(g, s) {
     _renderAll(g, s);
     if (!g) return;
+    syncSelectionUi(); // renderAction 会把匹配按钮重置为不可用，按当前选择恢复
     if (g.gameOver) {
       window.clearTimeout(hintT);
       hintT = null;
