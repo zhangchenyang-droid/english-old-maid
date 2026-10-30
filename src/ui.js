@@ -136,7 +136,7 @@ const Sound = (() => {
     raw[name] = fetch(url).then((r) => r.arrayBuffer()).catch(() => null);
   }
 
-  const bgm = new Audio("./assets/audio/bgm.mp3?v=4");
+  const bgm = new Audio("./assets/audio/bgm.mp3?v=5");
   bgm.loop = true;
   bgm.volume = BGM_VOLUME;
   bgm.preload = "auto";
