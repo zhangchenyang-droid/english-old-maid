@@ -3678,7 +3678,8 @@ function initUi(imagePairs = []) {
 
   // 第一关：选好一对后，小手立刻指向"匹配出牌"
   function showMatchHandHint() {
-    clearMatchHint();
+    const old = document.getElementById("hintHandMatch"); // 只换掉旧的小手，保留按钮的呼吸发光
+    if (old) old.remove();
     const btn = document.getElementById("btnMatchImg");
     if (!btn) return;
     const hintHand = document.createElement("div");
@@ -3689,15 +3690,24 @@ function initUi(imagePairs = []) {
     placeHintHandFingertip(hintHand, r.left + r.width / 2, r.top + r.height / 2);
   }
 
+  function showMatchPulse() {
+    const btn = document.getElementById("btnMatchImg");
+    if (btn) btn.classList.add("hintPulseAuto");
+  }
+
   function clearMatchHint() {
     const el = document.getElementById("hintHandMatch");
     if (el) el.remove();
+    const btn = document.getElementById("btnMatchImg");
+    if (btn) btn.classList.remove("hintPulseAuto");
   }
 
-  // 第一关：选牌变化后，选中的是一对就立刻提示点"匹配出牌"
+  // 第一关：选牌变化后，选中的是一对就立刻提示点"匹配出牌"（按钮呼吸发光 + 小手）
   function syncTutorialMatchHint() {
-    if (isTutorialLevel() && selectedIsValidPair() && game && !game.gameOver) showMatchHandHint();
-    else clearMatchHint();
+    if (isTutorialLevel() && selectedIsValidPair() && game && !game.gameOver) {
+      showMatchPulse();
+      showMatchHandHint();
+    } else clearMatchHint();
   }
 
   function scheduleHintFromNow() {
@@ -3722,8 +3732,17 @@ function initUi(imagePairs = []) {
       if (lastHumanActionAt !== stamp) return;
       if (!game || game.gameOver) return;
       if (needDraw && humanDrawStarted) return;
-      // 第一关已经选好一对：小手已经指着"匹配出牌"，不再弹别的提示
-      if (isTutorialLevel() && selectedIsValidPair()) return;
+      // 已经选好一对：提示"匹配出牌"（按钮呼吸发光，再出现小手），不再让牌呼吸
+      if (selectedIsValidPair()) {
+        if (isTutorialLevel()) return; // 第一关选好时已经立刻提示过了
+        showMatchPulse();
+        hintHandT = window.setTimeout(() => {
+          if (lastHumanActionAt !== stamp) return;
+          if (!game || game.gameOver || !selectedIsValidPair()) return;
+          showMatchHandHint();
+        }, handDelay);
+        return;
+      }
 
       // 检查手里是否有可配对的牌
       const hasPair = window.Game.findAnyPairInHand(game.players[0].hand);

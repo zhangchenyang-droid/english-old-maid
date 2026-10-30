@@ -1253,9 +1253,20 @@ input[type="number"]:focus {
   --pressY: 4px;
 }
 
-/* 结束回合按钮呼吸提示动画 */
+/* 匹配出牌 / 结束回合按钮的提示：缩放呼吸 + 按按钮形状的外发光（光晕从无到有渐亮） */
 .uiBtn.hintPulseAuto {
   animation: uiBtnHintPulse 1.8s ease-in-out infinite;
+}
+.uiBtn.hintPulseAuto img {
+  animation: uiBtnHintGlow 1.8s ease-in-out infinite;
+}
+@keyframes uiBtnHintGlow {
+  0%, 100% {
+    filter: drop-shadow(0 0 2px rgba(255, 236, 150, 0.35)) drop-shadow(0 0 6px rgba(255, 200, 60, 0.25));
+  }
+  50% {
+    filter: drop-shadow(0 0 4px rgba(255, 244, 180, 0.95)) drop-shadow(0 0 14px rgba(255, 196, 50, 0.85));
+  }
 }
 
 @keyframes uiBtnHintPulse {
