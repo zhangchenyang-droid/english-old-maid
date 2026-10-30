@@ -377,7 +377,10 @@ function renderSeats(game, opts = {}) {
             </div>
           `;
         }
+        // 刷新时保留"选中弹出"状态（开局 AI 自动出对子等任何刷新都不该把玩家已经点出来的牌压回去）
+        const wasSelected = div.classList.contains("selected");
         div.className = `faceCard ${card.type === "joker" ? "joker imgCard" : ""} ${card.type === "img" ? "imgCard" : ""}`;
+        if (wasSelected && !dealMode) div.classList.add("selected");
         if (dealMode) div.dataset.dealIndex = String(idx);
         if (outgoingCardIds.has(card.id)) div.style.visibility = "hidden";
         else applySlotVars(div, 0, layoutIds.indexOf(card.id), layoutN);
