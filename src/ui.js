@@ -3525,13 +3525,9 @@ function initUi(imagePairs = []) {
     hintHand.className = "hintHand clicking";
     document.body.appendChild(hintHand);
 
-    // 获取按钮位置
+    // 指尖对准按钮中心
     const btnRect = btnEndTurnImg.getBoundingClientRect();
-    const handX = btnRect.left + btnRect.width / 2;
-    const handY = btnRect.top + btnRect.height / 2;
-
-    hintHand.style.left = `${handX}px`;
-    hintHand.style.top = `${handY}px`;
+    placeHintHandFingertip(hintHand, btnRect.left + btnRect.width / 2, btnRect.top + btnRect.height / 2);
   }
 
   function showHintHand() {
@@ -3608,17 +3604,9 @@ function initUi(imagePairs = []) {
     hintHand.className = "hintHand clicking"; // 立即添加点击动画类
     document.body.appendChild(hintHand);
 
-    // 获取目标卡牌位置
+    // 指尖对准卡牌中心
     const targetRect = targetEl.getBoundingClientRect();
-    const handSize = 60; // 提示手图片大小
-
-    // 找到提示手图片的点击点（指尖位置）
-    const fingerTipOffsetX = handSize * 0.5;
-    const fingerTipOffsetY = handSize * 0.65;
-
-    // 将指尖对准卡牌中心
-    hintHand.style.left = `${targetRect.left + targetRect.width / 2 - fingerTipOffsetX}px`;
-    hintHand.style.top = `${targetRect.top + targetRect.height / 2 - fingerTipOffsetY}px`;
+    placeHintHandFingertip(hintHand, targetRect.left + targetRect.width / 2, targetRect.top + targetRect.height / 2);
   }
 
   function maybeShowHint(isAuto = false) {
@@ -3655,6 +3643,7 @@ function initUi(imagePairs = []) {
       selected = [a, b];
       renderSelectionHighlights();
       syncSelectionUi();
+      syncTutorialMatchHint();
     }
 
     // 1.2秒后清除保护标记（hintPulse 动画一个循环的时间）
@@ -3676,6 +3665,41 @@ function initUi(imagePairs = []) {
     // 不再自动移除呼吸动画，让它持续进行直到玩家操作（在 clearHintHighlight 中清除）
   }
 
+  function isTutorialLevel() {
+    return (window.__GAME_ROUND_TRACKER__?.currentLevel || 1) === 1;
+  }
+
+  // 当前选中的两张是不是能配对的一对
+  function selectedIsValidPair() {
+    if (!game || selected.length !== 2) return false;
+    const [a, b] = selected.map((id) => game.players[0].hand.find((c) => c.id === id));
+    return !!(a && b && a.pairId && a.pairId === b.pairId && a.side !== b.side);
+  }
+
+  // 第一关：选好一对后，小手立刻指向"匹配出牌"
+  function showMatchHandHint() {
+    clearMatchHint();
+    const btn = document.getElementById("btnMatchImg");
+    if (!btn) return;
+    const hintHand = document.createElement("div");
+    hintHand.id = "hintHandMatch";
+    hintHand.className = "hintHand clicking";
+    document.body.appendChild(hintHand);
+    const r = btn.getBoundingClientRect();
+    placeHintHandFingertip(hintHand, r.left + r.width / 2, r.top + r.height / 2);
+  }
+
+  function clearMatchHint() {
+    const el = document.getElementById("hintHandMatch");
+    if (el) el.remove();
+  }
+
+  // 第一关：选牌变化后，选中的是一对就立刻提示点"匹配出牌"
+  function syncTutorialMatchHint() {
+    if (isTutorialLevel() && selectedIsValidPair() && game && !game.gameOver) showMatchHandHint();
+    else clearMatchHint();
+  }
+
   function scheduleHintFromNow() {
     if (hintT) return; // already scheduled for current inactivity window
     if (!game || game.gameOver) return;
@@ -3685,15 +3709,21 @@ function initUi(imagePairs = []) {
 
     const stamp = lastHumanActionAt;
     // 该抽牌了（手里没对子、本回合还没抽）：提示马上出现，不再等 3+3 秒
-    const needDraw = !game.turnHasDrawn && !window.Game.findAnyPairInHand(game.players[0].hand);
+    const noPair = !window.Game.findAnyPairInHand(game.players[0].hand);
+    const needDraw = !game.turnHasDrawn && noPair;
     if (needDraw && humanDrawStarted) return; // 正在抽牌（抽牌界面打开 / 牌在飞），别把小手盖上去
-    const firstDelay = needDraw ? 350 : HINT_MS; // 350ms：等上家牌堆的排位过渡结束，小手才对得准
-    const handDelay = needDraw ? 0 : HINT_HAND_MS;
+    // 第一关：已经抽过牌、手里没对子可出 → 立刻提示"结束回合"
+    const tutorialEnd = isTutorialLevel() && game.turnHasDrawn && noPair;
+    const quick = needDraw || tutorialEnd;
+    const firstDelay = quick ? 350 : HINT_MS; // 350ms：等牌堆/手牌的排位过渡结束，小手才对得准
+    const handDelay = quick ? 0 : HINT_HAND_MS;
     hintT = window.setTimeout(() => {
       // If user acted since scheduling, do nothing.
       if (lastHumanActionAt !== stamp) return;
       if (!game || game.gameOver) return;
       if (needDraw && humanDrawStarted) return;
+      // 第一关已经选好一对：小手已经指着"匹配出牌"，不再弹别的提示
+      if (isTutorialLevel() && selectedIsValidPair()) return;
 
       // 检查手里是否有可配对的牌
       const hasPair = window.Game.findAnyPairInHand(game.players[0].hand);
@@ -3732,6 +3762,7 @@ function initUi(imagePairs = []) {
     clearHintHighlight();
     clearHintHand();
     clearEndTurnHint(); // 清除结束回合按钮的提示
+    clearMatchHint();
     window.clearTimeout(hintT);
     hintT = null;
     window.clearTimeout(hintHandT);
@@ -4748,6 +4779,7 @@ function initUi(imagePairs = []) {
 
               clearSelection();
               renderAll(game, settings);
+              markHumanAction(); // 抽的牌落地：重新开始提示计时
             });
           } else {
             console.log("[翻转完成] 普通卡牌，启动飞行动画", { drawnCard, cardStartX, cardStartY });
@@ -4791,6 +4823,7 @@ function initUi(imagePairs = []) {
               clearSelection();
               renderAll(game, settings);
               console.log("[飞行完成] renderAll完成");
+              markHumanAction(); // 抽的牌落地：重新开始提示计时（第一关没牌可出会立刻提示结束回合）
             });
           }
         };
@@ -5637,6 +5670,7 @@ function initUi(imagePairs = []) {
     }
     renderSelectionHighlights();
     syncSelectionUi();
+    syncTutorialMatchHint();
   });
 
   // UI image buttons
@@ -5903,6 +5937,7 @@ function initUi(imagePairs = []) {
       clearHintHighlight();
       clearHintHand();
       clearEndTurnHint(); // 结束回合按钮上的提示小手也收掉
+      clearMatchHint();
 
       const loser = window.Game.findJokerHolder(g.players);
       const youLose = loser && loser.id === g.players[0].id;
